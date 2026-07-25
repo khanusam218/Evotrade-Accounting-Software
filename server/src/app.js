@@ -174,9 +174,12 @@ app.use('/api/reports',                   reportsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
-// Serve the built React app (client/dist) when present, so a single Node
-// process can host both the API and the frontend on shared hosting.
-const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+// Serve the built React app (built into server/public, see vite.config.ts)
+// when present, so a single Node process can host both the API and the
+// frontend on shared hosting. Built inside server/ rather than referenced
+// from client/dist so it travels with the server directory even on hosts
+// whose deploy runtime doesn't carry sibling folders alongside the app root.
+const clientDist = path.join(__dirname, '..', 'public');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get(/^(?!\/api\/).*/, (_req, res) => {
