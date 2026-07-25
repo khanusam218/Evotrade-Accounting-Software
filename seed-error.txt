@@ -1,0 +1,2 @@
+❌  Cannot connect to server. Is the server running on port 3001?
+   Start it with: cd server && npm run dev

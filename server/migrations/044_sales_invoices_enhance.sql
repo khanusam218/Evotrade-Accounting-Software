@@ -1,0 +1,3 @@
+ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS subject          TEXT;
+ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS discount_pct     NUMERIC(5,2)  NOT NULL DEFAULT 0;
+ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS shipping_charges NUMERIC(12,2) NOT NULL DEFAULT 0;

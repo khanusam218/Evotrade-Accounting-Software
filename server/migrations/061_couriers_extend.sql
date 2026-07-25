@@ -1,0 +1,13 @@
+ALTER TABLE couriers
+  ADD COLUMN IF NOT EXISTS courier_name    TEXT,
+  ADD COLUMN IF NOT EXISTS display_name   TEXT,
+  ADD COLUMN IF NOT EXISTS contact_person TEXT,
+  ADD COLUMN IF NOT EXISTS phone2         TEXT,
+  ADD COLUMN IF NOT EXISTS phone3         TEXT,
+  ADD COLUMN IF NOT EXISTS address2       TEXT,
+  ADD COLUMN IF NOT EXISTS city           TEXT,
+  ADD COLUMN IF NOT EXISTS state          TEXT,
+  ADD COLUMN IF NOT EXISTS zip            TEXT,
+  ADD COLUMN IF NOT EXISTS country        TEXT,
+  ADD COLUMN IF NOT EXISTS ntn            TEXT,
+  ADD COLUMN IF NOT EXISTS cnic           TEXT;

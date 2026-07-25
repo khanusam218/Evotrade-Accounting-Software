@@ -1,0 +1,547 @@
+
+---
+
+## 2. `requirements.csv` – Full traceability matrix
+
+Copy the following CSV content into a file named `requirements.csv`. Then open in Excel and save as `.xlsx` if desired.
+
+```csv
+ID,Module,Requirement,Priority,Status
+FR-CRM-TK-01,CRM - Tickets,Multi-filter list (Number, Date, Title, Contact, Phone, City, Ticket Age, Created By, Assigned To, Status, Tag),High,Approved
+FR-CRM-TK-02,CRM - Tickets,Auto-generated number T-XXXXX,High,Approved
+FR-CRM-TK-03,CRM - Tickets,Type-ahead for Contact, Project, Tag, Assigned To,Medium,Approved
+FR-CRM-TK-04,CRM - Tickets,Drag-and-drop attachments,Low,Approved
+FR-CRM-TK-05,CRM - Tickets,Status workflow (Open → In Progress → Resolved → Closed),High,Approved
+FR-CRM-LD-01,CRM - Leads,Multi-filter list (Number, Date, Contact, Phone, City, Assigned To, Lead Source, Lead Status, Tags, Projects),High,Approved
+FR-CRM-LD-02,CRM - Leads,Auto-number L-XXXXX,High,Approved
+FR-CRM-LD-03,CRM - Leads,Convert lead to customer,High,Approved
+FR-CRM-EV-01,CRM - Events,Multi-filter list (Number, Subject, Contact, Phone, City, Assigned To, Start Date, End Date, Event Type, Status),High,Approved
+FR-CRM-EV-02,CRM - Events,Auto-number EV-XXXXXX,High,Approved
+FR-CRM-EV-03,CRM - Events,Date/time validation (End >= Start),High,Approved
+FR-CRM-EV-04,CRM - Events,Attachments,Low,Approved
+FR-CRM-EV-05,CRM - Events,Calendar view,High,Approved
+FR-CRM-CL-01,CRM - Calls,Multi-filter list (Number, Date, Contact, Phone, Assigned To, Call Type, Call Purpose, Status),High,Approved
+FR-CRM-CL-02,CRM - Calls,Auto-number C-XXXXX,High,Approved
+FR-CRM-CL-03,CRM - Calls,Duration auto-calc from Start/End Time,Medium,Approved
+FR-CRM-CL-04,CRM - Calls,Link to Contact/Lead/Customer,High,Approved
+FR-CRM-CL-05,CRM - Calls,Follow-up required with date,Medium,Approved
+FR-SALES-01,Sales - Navigation,8 sub-modules (Quotation, Order, Delivery, Invoice, Recurring Invoice, Return, Receive Payment, Refund, Settlement),High,Approved
+FR-SALES-QT-01,Sales - Quotations,List filters (Number, Date, Customer, Reference, Expiry Date, Gross Amount, Net Amount, Status),High,Approved
+FR-SALES-QT-02,Sales - Quotations,Bulk approve selected quotations,Medium,Approved
+FR-SALES-QT-03,Sales - Quotations,Export to Excel,Low,Approved
+FR-SALES-QT-04,Sales - Quotations,Auto-number SQ-XXXXXX,High,Approved
+FR-SALES-QT-05,Sales - Quotations,Line items with product type-ahead, quantity, price, discount, amount auto-calc,High,Approved
+FR-SALES-QT-06,Sales - Quotations,Barcode scanning for quick add,High,Approved
+FR-SALES-QT-07,Sales - Quotations,Convert to Order or Invoice,High,Approved
+FR-SALES-OR-01,Sales - Orders,List filters (Number, Date, Customer, Reference, Delivery Date, Gross Amount, Net Amount, Status),High,Approved
+FR-SALES-OR-02,Sales - Orders,Export to Excel,Low,Approved
+FR-SALES-OR-03,Sales - Orders,Print functionality,Low,Approved
+FR-SALES-OR-04,Sales - Orders,Auto-number SO-XXXXXX,High,Approved
+FR-SALES-OR-05,Sales - Orders,Customer mandatory,High,Approved
+FR-SALES-OR-06,Sales - Orders,Line items with auto-calc,High,Approved
+FR-SALES-OR-07,Sales - Orders,Barcode scanning,High,Approved
+FR-SALES-OR-08,Sales - Orders,Attachments support,Low,Approved
+FR-SALES-OR-09,Sales - Orders,Internal comments,Medium,Approved
+FR-SALES-OR-10,Sales - Orders,Tax calculation,High,Approved
+FR-SALES-OR-11,Sales - Orders,Status workflow (Draft → Confirmed → Shipped → Delivered → Invoiced),High,Approved
+FR-SALES-OR-12,Sales - Orders,Create from Quotation or direct,High,Approved
+FR-SALES-OR-13,Sales - Orders,Delivery Date mandatory,High,Approved
+FR-SALES-DL-01,Sales - Deliveries,List filters (Number, Date, Customer, Order, Reference, Warehouse, Status),High,Approved
+FR-SALES-DL-02,Sales - Deliveries,Export to Excel,Low,Approved
+FR-SALES-DL-03,Sales - Deliveries,Auto-number SD-XXXXXX,High,Approved
+FR-SALES-DL-04,Sales - Deliveries,Warehouse selection,High,Approved
+FR-SALES-DL-05,Sales - Deliveries,Link to Sales Order,High,Approved
+FR-SALES-DL-06,Sales - Deliveries,Pending quantity calculation,High,Approved
+FR-SALES-DL-07,Sales - Deliveries,Barcode scanning,High,Approved
+FR-SALES-DL-08,Sales - Deliveries,Shipping address,Medium,Approved
+FR-SALES-DL-09,Sales - Deliveries,Status workflow (Draft → Shipped → Delivered),High,Approved
+FR-SALES-DL-10,Sales - Deliveries,Inventory reduction,High,Approved
+FR-SALES-DL-11,Sales - Deliveries,Cannot exceed order quantities,High,Approved
+FR-SALES-DL-12,Sales - Deliveries,Direct delivery without order,Medium,Approved
+FR-SALES-DL-13,Sales - Deliveries,Auto-invoice option,Medium,Approved
+FR-SALES-INV-01,Sales - Invoices,List filters (Number, Date, Customer, Reference, Order, Deliveries, Due Date, Net, Balance, Status),High,Approved
+FR-SALES-INV-02,Sales - Invoices,Balance Amount filter,High,Approved
+FR-SALES-INV-03,Sales - Invoices,Overdue auto-calculation,High,Approved
+FR-SALES-INV-04,Sales - Invoices,Auto-number SI-XXXXXX,High,Approved
+FR-SALES-INV-05,Sales - Invoices,Customer mandatory,High,Approved
+FR-SALES-INV-06,Sales - Invoices,Due Date based on customer terms,High,Approved
+FR-SALES-INV-07,Sales - Invoices,Line items with auto-calc,High,Approved
+FR-SALES-INV-08,Sales - Invoices,Gross total calc,High,Approved
+FR-SALES-INV-09,Sales - Invoices,Net with discount,High,Approved
+FR-SALES-INV-10,Sales - Invoices,Balance Amount tracking,High,Approved
+FR-SALES-INV-11,Sales - Invoices,Create from Order/Quotation/Delivery/Direct,High,Approved
+FR-SALES-INV-12,Sales - Invoices,Partial invoicing from Orders,High,Approved
+FR-SALES-INV-13,Sales - Invoices,Consolidate multiple Deliveries,Medium,Approved
+FR-SALES-INV-14,Sales - Invoices,Payment allocation updates status,High,Approved
+FR-SALES-INV-15,Sales - Invoices,Overdue auto-flagging,High,Approved
+FR-SALES-INV-16,Sales - Invoices,Cannot delete if payments exist,High,Approved
+FR-SALES-INV-17,Sales - Invoices,Credit Notes reduce balance,High,Approved
+FR-SALES-RI-01,Sales - Recurring Invoices,List filters (Number, Customer, Reference, Frequency, Interval, Start Date, End Date, Next Execution, Last Execute),High,Approved
+FR-SALES-RI-02,Sales - Recurring Invoices,Export to Excel,Low,Approved
+FR-SALES-RI-03,Sales - Recurring Invoices,Status column (Active, Paused, Completed, Cancelled),High,Approved
+FR-SALES-RI-04,Sales - Recurring Invoices,Auto-number RI-XXXXXX,High,Approved
+FR-SALES-RI-05,Sales - Recurring Invoices,Customer mandatory,High,Approved
+FR-SALES-RI-06,Sales - Recurring Invoices,Frequency options (Daily, Weekly, Monthly, Quarterly, Yearly),High,Approved
+FR-SALES-RI-07,Sales - Recurring Invoices,Interval support (e.g., every 2 months),High,Approved
+FR-SALES-RI-08,Sales - Recurring Invoices,Start Date validation,High,Approved
+FR-SALES-RI-09,Sales - Recurring Invoices,End Date validation,High,Approved
+FR-SALES-RI-10,Sales - Recurring Invoices,Line items with auto-calc,High,Approved
+FR-SALES-RI-11,Sales - Recurring Invoices,Next Execution auto-calculation,High,Approved
+FR-SALES-RI-12,Sales - Recurring Invoices,Auto-create Invoice on execution date,High,Approved
+FR-SALES-RI-13,Sales - Recurring Invoices,Link generated invoices to recurring profile,High,Approved
+FR-SALES-RI-14,Sales - Recurring Invoices,Update Next Execution after generation,High,Approved
+FR-SALES-RI-15,Sales - Recurring Invoices,Stop generation at End Date or Cancellation,High,Approved
+FR-SALES-RI-16,Sales - Recurring Invoices,Handle generation failures gracefully,Medium,Approved
+FR-SALES-RI-17,Sales - Recurring Invoices,Pause/Resume functionality,High,Approved
+FR-SALES-RI-18,Sales - Recurring Invoices,Edit profile after invoice generation,High,Approved
+FR-SALES-RET-01,Sales - Returns,List filters (Number, Date, Reference, Customer, Net Amount, Unadjusted Amount, Status),High,Approved
+FR-SALES-RET-02,Sales - Returns,Unadjusted Amount filter,High,Approved
+FR-SALES-RET-03,Sales - Returns,Print & Export to Excel,Low,Approved
+FR-SALES-RET-04,Sales - Returns,Auto-number SR-XXXXXX,High,Approved
+FR-SALES-RET-05,Sales - Returns,Customer mandatory,High,Approved
+FR-SALES-RET-06,Sales - Returns,Line items with auto-calc,High,Approved
+FR-SALES-RET-07,Sales - Returns,Barcode scanning,High,Approved
+FR-SALES-RET-08,Sales - Returns,Attachments,Low,Approved
+FR-SALES-RET-09,Sales - Returns,Gross total calc,High,Approved
+FR-SALES-RET-10,Sales - Returns,Link to original Invoice,High,Approved
+FR-SALES-RET-11,Sales - Returns,Apply credit to invoices, refund, or store credit,High,Approved
+FR-SALES-RET-12,Sales - Returns,Unadjusted Amount tracking,High,Approved
+FR-SALES-RET-13,Sales - Returns,Reduces invoice Balance Amount,High,Approved
+FR-SALES-RET-14,Sales - Returns,Cannot edit after adjustment,High,Approved
+FR-SALES-RET-15,Sales - Returns,Status workflow (Draft → Approved → Partially Adjusted → Fully Adjusted),High,Approved
+FR-SALES-RET-16,Sales - Returns,Inventory increase on restock,High,Approved
+FR-SALES-RET-17,Sales - Returns,Restock/Damaged/Write-off options,High,Approved
+FR-SALES-RET-18,Sales - Returns,Create from Invoice,High,Approved
+FR-SALES-RP-01,Sales - Receive Payment,List filters (Number, Date, Customer, Reference, Total Amount, Unadjusted Amount, Status),High,Approved
+FR-SALES-RP-02,Sales - Receive Payment,Bulk entry separate,Medium,Approved
+FR-SALES-RP-03,Sales - Receive Payment,Auto-number RM-XXXXXX,High,Approved
+FR-SALES-RP-04,Sales - Receive Payment,Customer mandatory,High,Approved
+FR-SALES-RP-05,Sales - Receive Payment,Multiple payment modes (Cash, Cheque, Bank Transfer, Credit Card),High,Approved
+FR-SALES-RP-06,Sales - Receive Payment,Multiple instruments per payment,High,Approved
+FR-SALES-RP-07,Sales - Receive Payment,Account adjustments (WHT, rebate, bank charges),High,Approved
+FR-SALES-RP-08,Sales - Receive Payment,Total amount calc,High,Approved
+FR-SALES-RP-09,Sales - Receive Payment,Attachments,Low,Approved
+FR-SALES-RP-10,Sales - Receive Payment,Allocation to invoices,High,Approved
+FR-SALES-RP-11,Sales - Receive Payment,Bulk entry table,Medium,Approved
+FR-SALES-RP-12,Sales - Receive Payment,Auto settlements checkbox,Medium,Approved
+FR-SALES-RP-13,Sales - Receive Payment,Multiple payment methods,High,Approved
+FR-SALES-RP-14,Sales - Receive Payment,Save and approve,High,Approved
+FR-SALES-RP-15,Sales - Receive Payment,Allocate to one/multiple invoices,High,Approved
+FR-SALES-RP-16,Sales - Receive Payment,Updates invoice balances and status,High,Approved
+FR-SALES-RP-17,Sales - Receive Payment,Unallocated = customer credit,High,Approved
+FR-SALES-RP-18,Sales - Receive Payment,Editable until applied,High,Approved
+FR-SALES-RP-19,Sales - Receive Payment,Print receipt with details,Low,Approved
+FR-SALES-RF-01,Sales - Refunds,List filters (Number, Date, Customer, Reference, Total Amount, Unadjusted Amount, Status),High,Approved
+FR-SALES-RF-02,Sales - Refunds,Auto-number CR-XXXXXX,High,Approved
+FR-SALES-RF-03,Sales - Refunds,Customer mandatory,High,Approved
+FR-SALES-RF-04,Sales - Refunds,Multiple instruments,High,Approved
+FR-SALES-RF-05,Sales - Refunds,Refund methods (Cash, Cheque, Bank Transfer),High,Approved
+FR-SALES-RF-06,Sales - Refunds,Account adjustments,High,Approved
+FR-SALES-RF-07,Sales - Refunds,Total amount calc,High,Approved
+FR-SALES-RF-08,Sales - Refunds,Attachments,Low,Approved
+FR-SALES-RF-09,Sales - Refunds,Create from Return, overpayment, or credit,High,Approved
+FR-SALES-RF-10,Sales - Refunds,Return linkage reduces Unadjusted Amount,High,Approved
+FR-SALES-RF-11,Sales - Refunds,Overpayment refund limits,High,Approved
+FR-SALES-RF-12,Sales - Refunds,Reduces customer credit balance,High,Approved
+FR-SALES-RF-13,Sales - Refunds,Status workflow (Draft → Approved → Completed / Cancelled),High,Approved
+FR-SALES-RF-14,Sales - Refunds,Completed refunds cannot be edited,High,Approved
+FR-SALES-STL-01,Sales - Settlements,List filters (Number, Date, Customer, Total Amount, Status),High,Approved
+FR-SALES-STL-02,Sales - Settlements,Print & Export to Excel,Low,Approved
+FR-SALES-STL-03,Sales - Settlements,Auto-number CS-XXXXXX,High,Approved
+FR-SALES-STL-04,Sales - Settlements,Customer mandatory,High,Approved
+FR-SALES-STL-05,Sales - Settlements,Make auto settlements checkbox,Medium,Approved
+FR-SALES-STL-06,Sales - Settlements,Receivables table (open invoices),High,Approved
+FR-SALES-STL-07,Sales - Settlements,Manual allocation,High,Approved
+FR-SALES-STL-08,Sales - Settlements,Auto settlement logic,High,Approved
+FR-SALES-STL-09,Sales - Settlements,Partial settlement allowed,High,Approved
+FR-SALES-STL-10,Sales - Settlements,Updates invoice balances,High,Approved
+FR-SALES-STL-11,Sales - Settlements,Void/cancellation,High,Approved
+FR-SALES-STL-12,Sales - Settlements,Audit trail,High,Approved
+FR-SALES-STL-13,Sales - Settlements,Write-off support,Medium,Approved
+FR-SALES-STL-14,Sales - Settlements,Close customer account,High,Approved
+FR-PUR-01,Purchases - Navigation,7 sub-modules (Order, Good Receiving, Invoice, Import Invoice, Return, Make Payment, Refund, Settlement),High,Approved
+FR-PUR-PO-01,Purchases - Orders,List filters (Number, Date, Vendor, Reference, Receipt Date, Gross, Net, Status),High,Approved
+FR-PUR-PO-02,Purchases - Orders,Auto-number PO-XXXXXX,High,Approved
+FR-PUR-PO-03,Purchases - Orders,Vendor mandatory,High,Approved
+FR-PUR-PO-04,Purchases - Orders,Line items with auto-calc,High,Approved
+FR-PUR-PO-05,Purchases - Orders,Quick Add Products / Scan,High,Approved
+FR-PUR-PO-06,Purchases - Orders,Gross total calc,High,Approved
+FR-PUR-PO-07,Purchases - Orders,Net total calc,High,Approved
+FR-PUR-PO-08,Purchases - Orders,Attachments,Low,Approved
+FR-PUR-PO-09,Purchases - Orders,Expected Receipt Date,Medium,Approved
+FR-PUR-PO-10,Purchases - Orders,Barcode scanning popup,High,Approved
+FR-PUR-PO-11,Purchases - Orders,Link to Good Receiving,High,Approved
+FR-PUR-PO-12,Purchases - Orders,Track received quantity,High,Approved
+FR-PUR-PO-13,Purchases - Orders,Partial receipts allowed,High,Approved
+FR-PUR-PO-14,Purchases - Orders,Status workflow (Draft → Sent → Partially Received → Received),High,Approved
+FR-PUR-GR-01,Purchases - Good Receiving,List filters (Number, Date, Vendor, Reference, Warehouse, Status),High,Approved
+FR-PUR-GR-02,Purchases - Good Receiving,Export to Excel,Low,Approved
+FR-PUR-GR-03,Purchases - Good Receiving,Auto-number GR-XXXXXX,High,Approved
+FR-PUR-GR-04,Purchases - Good Receiving,Vendor mandatory,High,Approved
+FR-PUR-GR-05,Purchases - Good Receiving,Warehouse selection,High,Approved
+FR-PUR-GR-06,Purchases - Good Receiving,Link to Purchase Order,High,Approved
+FR-PUR-GR-07,Purchases - Good Receiving,Cannot exceed PO quantities,High,Approved
+FR-PUR-GR-08,Purchases - Good Receiving,Barcode scanning,High,Approved
+FR-PUR-GR-09,Purchases - Good Receiving,Inventory increase,High,Approved
+FR-PUR-GR-10,Purchases - Good Receiving,Update PO received_quantity,High,Approved
+FR-PUR-GR-11,Purchases - Good Receiving,Update PO status (Partially Received / Received),High,Approved
+FR-PUR-GR-12,Purchases - Good Receiving,Direct receipt without PO,Medium,Approved
+FR-PUR-GR-13,Purchases - Good Receiving,Auto-create Invoice option,Medium,Approved
+FR-PUR-GR-14,Purchases - Good Receiving,Inventory increase on confirm,High,Approved
+FR-PUR-GR-15,Purchases - Good Receiving,Reversal on cancel,High,Approved
+FR-PUR-INV-01,Purchases - Invoices,List filters (Number, Date, Vendor, Reference, Due Date, Net, Balance, Status),High,Approved
+FR-PUR-INV-02,Purchases - Invoices,Bulk approval,Medium,Approved
+FR-PUR-INV-03,Purchases - Invoices,Print & Export to Excel,Low,Approved
+FR-PUR-INV-04,Purchases - Invoices,Overdue auto-calculation,High,Approved
+FR-PUR-INV-05,Purchases - Invoices,Auto-number PI-XXXXXX,High,Approved
+FR-PUR-INV-06,Purchases - Invoices,Vendor mandatory,High,Approved
+FR-PUR-INV-07,Purchases - Invoices,Due Date based on vendor terms,High,Approved
+FR-PUR-INV-08,Purchases - Invoices,Line items with auto-calc,High,Approved
+FR-PUR-INV-09,Purchases - Invoices,Gross total calc,High,Approved
+FR-PUR-INV-10,Purchases - Invoices,Net with discount,High,Approved
+FR-PUR-INV-11,Purchases - Invoices,Barcode scanning,High,Approved
+FR-PUR-INV-12,Purchases - Invoices,Create from PO, GR, or direct,High,Approved
+FR-PUR-INV-13,Purchases - Invoices,Partial invoicing from PO,High,Approved
+FR-PUR-INV-14,Purchases - Invoices,Consolidate multiple GRs,Medium,Approved
+FR-PUR-INV-15,Purchases - Invoices,Payment allocation updates status,High,Approved
+FR-PUR-INV-16,Purchases - Invoices,Overdue auto-flagging,High,Approved
+FR-PUR-INV-17,Purchases - Invoices,Cannot delete if payments exist,High,Approved
+FR-PUR-INV-18,Purchases - Invoices,Debit Notes reduce balance,High,Approved
+FR-PUR-II-01,Purchases - Import Invoices,List filters (Number, Date, Vendor, Reference, Due Date, Net, Balance, Status),High,Approved
+FR-PUR-II-02,Purchases - Import Invoices,Export to Excel,Low,Approved
+FR-PUR-II-03,Purchases - Import Invoices,Auto-number II-XXXXXX,High,Approved
+FR-PUR-II-04,Purchases - Import Invoices,Vendor mandatory,High,Approved
+FR-PUR-II-05,Purchases - Import Invoices,Line items with expense allocation columns,High,Approved
+FR-PUR-II-06,Purchases - Import Invoices,Percentage total = 100% validation,High,Approved
+FR-PUR-II-07,Purchases - Import Invoices,Expenses section (duty, freight, insurance),High,Approved
+FR-PUR-II-08,Purchases - Import Invoices,TOTAL NEW VALUE = landed cost,High,Approved
+FR-PUR-II-09,Purchases - Import Invoices,Expenses as fixed amounts or percentages,High,Approved
+FR-PUR-II-10,Purchases - Import Invoices,Expense distribution validation,High,Approved
+FR-PUR-II-11,Purchases - Import Invoices,Updates product cost basis,High,Approved
+FR-PUR-II-12,Purchases - Import Invoices,Linked to PO/GR/Invoice,High,Approved
+FR-PUR-PRT-01,Purchases - Returns,List filters (Number, Date, Vendor, Reference, Net Amount, Unadjusted Amount, Status),High,Approved
+FR-PUR-PRT-02,Purchases - Returns,Auto-number PR-XXXXXX,High,Approved
+FR-PUR-PRT-03,Purchases - Returns,Vendor mandatory,High,Approved
+FR-PUR-PRT-04,Purchases - Returns,Line items with auto-calc,High,Approved
+FR-PUR-PRT-05,Purchases - Returns,Barcode scanning,High,Approved
+FR-PUR-PRT-06,Purchases - Returns,Attachments,Low,Approved
+FR-PUR-PRT-07,Purchases - Returns,Link to original Invoice,High,Approved
+FR-PUR-PRT-08,Purchases - Returns,Apply credit to invoices, refund, or credit,High,Approved
+FR-PUR-PRT-09,Purchases - Returns,Unadjusted Amount tracking,High,Approved
+FR-PUR-PRT-10,Purchases - Returns,Reduces invoice Balance Amount,High,Approved
+FR-PUR-PRT-11,Purchases - Returns,Cannot edit after adjustment,High,Approved
+FR-PUR-PRT-12,Purchases - Returns,Status workflow (Draft → Approved → Partially Adjusted → Fully Adjusted),High,Approved
+FR-PUR-PRT-13,Purchases - Returns,Inventory decrease on restock,High,Approved
+FR-PUR-PRT-14,Purchases - Returns,Restock/Damaged/Write-off options,High,Approved
+FR-PUR-PRT-15,Purchases - Returns,Create from Invoice,High,Approved
+FR-PUR-MP-01,Purchases - Make Payment,List filters (Number, Date, Vendor, Reference, Total Amount, Unadjusted Amount, Status),High,Approved
+FR-PUR-MP-02,Purchases - Make Payment,Auto-number PY-XXXXXX,High,Approved
+FR-PUR-MP-03,Purchases - Make Payment,Vendor mandatory,High,Approved
+FR-PUR-MP-04,Purchases - Make Payment,Multiple payment modes,High,Approved
+FR-PUR-MP-05,Purchases - Make Payment,Multiple instruments per payment,High,Approved
+FR-PUR-MP-06,Purchases - Make Payment,Account adjustments (WHT, rebate, bank charges),High,Approved
+FR-PUR-MP-07,Purchases - Make Payment,Total amount calc,High,Approved
+FR-PUR-MP-08,Purchases - Make Payment,Attachments,Low,Approved
+FR-PUR-MP-09,Purchases - Make Payment,Allocation to invoices,High,Approved
+FR-PUR-MP-10,Purchases - Make Payment,Updates invoice balances and status,High,Approved
+FR-PUR-MP-11,Purchases - Make Payment,Unallocated = vendor credit,High,Approved
+FR-PUR-MP-12,Purchases - Make Payment,Status workflow,High,Approved
+FR-PUR-VR-01,Purchases - Refunds,List filters (Number, Date, Vendor, Reference, Total Amount, Unadjusted Amount, Status),High,Approved
+FR-PUR-VR-02,Purchases - Refunds,Auto-number VR-XXXXXX,High,Approved
+FR-PUR-VR-03,Purchases - Refunds,Vendor mandatory,High,Approved
+FR-PUR-VR-04,Purchases - Refunds,Multiple instruments,High,Approved
+FR-PUR-VR-05,Purchases - Refunds,Refund methods,High,Approved
+FR-PUR-VR-06,Purchases - Refunds,Account adjustments,High,Approved
+FR-PUR-VR-07,Purchases - Refunds,Total amount calc,High,Approved
+FR-PUR-VR-08,Purchases - Refunds,Attachments,Low,Approved
+FR-PUR-VR-09,Purchases - Refunds,Create from Return, overpayment, or credit,High,Approved
+FR-PUR-VR-10,Purchases - Refunds,Return linkage reduces Unadjusted Amount,High,Approved
+FR-PUR-VR-11,Purchases - Refunds,Reduces vendor credit balance,High,Approved
+FR-PUR-VR-12,Purchases - Refunds,Status workflow,High,Approved
+FR-PUR-VS-01,Purchases - Settlements,List filters (Number, Date, Vendor, Total Amount, Status),High,Approved
+FR-PUR-VS-02,Purchases - Settlements,Auto-number VS-XXXXXX,High,Approved
+FR-PUR-VS-03,Purchases - Settlements,Vendor mandatory,High,Approved
+FR-PUR-VS-04,Purchases - Settlements,Make auto settlements checkbox,Medium,Approved
+FR-PUR-VS-05,Purchases - Settlements,Payables table (open purchase invoices),High,Approved
+FR-PUR-VS-06,Purchases - Settlements,Manual allocation,High,Approved
+FR-PUR-VS-07,Purchases - Settlements,Auto settlement logic,High,Approved
+FR-PUR-VS-08,Purchases - Settlements,Partial settlement allowed,High,Approved
+FR-PUR-VS-09,Purchases - Settlements,Updates invoice balances,High,Approved
+FR-PUR-VS-10,Purchases - Settlements,Void/cancellation,High,Approved
+FR-PUR-VS-11,Purchases - Settlements,Audit trail,High,Approved
+FR-PUR-VS-12,Purchases - Settlements,Write-off support,Medium,Approved
+FR-POS-01,POS - Navigation,5 sub-modules (Checkout Counter, Delivery Counter, POS Offline, Barcode/QR Code, Daily Summary),High,Approved
+FR-POS-CC-01,POS - Checkout Counter Setup,List columns (Name, Cash Account, Warehouse, Status),High,Approved
+FR-POS-CC-02,POS - Checkout Counter Setup,Search functionality,Medium,Approved
+FR-POS-CC-03,POS - Checkout Counter Setup,Name mandatory & unique,High,Approved
+FR-POS-CC-04,POS - Checkout Counter Setup,Warehouse selection,High,Approved
+FR-POS-CC-05,POS - Checkout Counter Setup,Cash Account selection,High,Approved
+FR-POS-CC-06,POS - Checkout Counter Setup,POS Invoice Series,High,Approved
+FR-POS-CC-07,POS - Checkout Counter Setup,Sale Return Series,High,Approved
+FR-POS-CC-08,POS - Checkout Counter Setup,Add new series on the fly,Medium,Approved
+FR-POS-CC-09,POS - Checkout Counter Setup,POS Search setting,Medium,Approved
+FR-POS-CC-10,POS - Checkout Counter Setup,Primary Search setting,Medium,Approved
+FR-POS-CC-11,POS - Checkout Counter Setup,Status (Active/Inactive),High,Approved
+FR-POS-CC-12,POS - Checkout Counter Check-in,Check-in before POS use,High,Approved
+FR-POS-CC-13,POS - Checkout Counter Check-in,Help text explanation,Low,Approved
+FR-POS-CC-14,POS - Checkout Counter Check-in,Search filter,Medium,Approved
+FR-POS-CC-15,POS - Checkout Counter Check-in,CHECK IN button per counter,High,Approved
+FR-POS-CC-16,POS - Checkout Counter Check-in,One user per counter maximum,High,Approved
+FR-POS-CC-17,POS - Checkout Counter Check-in,Error if already checked in,High,Approved
+FR-POS-CC-18,POS - Checkout Counter Check-in,Redirect to POS after success,High,Approved
+FR-POS-CC-19,POS - Checkout Counter Check-in,End shift reconciliation,High,Approved
+FR-POS-CC-20,POS - Checkout Counter Check-in,Auto-checkout on inactivity,Medium,Approved
+FR-POS-CC-21,POS - Checkout Counter Check-in,Admin force check-out,Medium,Approved
+FR-POS-CC-22,POS - Checkout Counter Check-in,Shift record with cash tracking,High,Approved
+FR-POS-DC-01,POS - Delivery Counter Setup,List display with Name and Action,High,Approved
+FR-POS-DC-02,POS - Delivery Counter Setup,Search functionality,Medium,Approved
+FR-POS-DC-03,POS - Delivery Counter Setup,Name mandatory & unique,High,Approved
+FR-POS-DC-04,POS - Delivery Counter Setup,Product Categories selection,High,Approved
+FR-POS-DC-05,POS - Delivery Counter Setup,Status (Active/Inactive),High,Approved
+FR-POS-DC-06,POS - Delivery Counter Setup,Warehouse link (implied),High,Approved
+FR-POS-DC-07,POS - Delivery Counter Workflow,Purpose (phone/online orders),High,Approved
+FR-POS-DC-08,POS - Delivery Counter Workflow,Category restriction,High,Approved
+FR-POS-DC-09,POS - Delivery Counter Interface,Address, time slot, status tracking,High,Approved
+FR-POS-OFF-01,POS - Offline,Keep selling without internet,High,Approved
+FR-POS-OFF-02,POS - Offline,3-step setup (Subscribe → Download → Install),High,Approved
+FR-POS-OFF-03,POS - Offline,Initial sync (products, taxes, customers),High,Approved
+FR-POS-OFF-04,POS - Offline,Local queue with temporary IDs,High,Approved
+FR-POS-OFF-05,POS - Offline,Auto-sync on reconnect,High,Approved
+FR-POS-OFF-06,POS - Offline,Limitations (inventory, credit checks, etc.),Medium,Approved
+FR-POS-OFF-07,POS - Offline,Connection status indicator,Medium,Approved
+FR-POS-BC-01,POS - Barcode/QR Code,Barcode templates list,High,Approved
+FR-POS-BC-02,POS - Barcode/QR Code,Template name mandatory,High,Approved
+FR-POS-BC-03,POS - Barcode/QR Code,Page layout settings (width, gaps, margins),High,Approved
+FR-POS-BC-04,POS - Barcode/QR Code,Barcode format (CODE128, QR, etc.),High,Approved
+FR-POS-BC-05,POS - Barcode/QR Code,Real-time preview,High,Approved
+FR-POS-BC-06,POS - Barcode/QR Code,Print dialog with sheet count,High,Approved
+FR-POS-BC-07,POS - Barcode/QR Code,Printer selection and copies,High,Approved
+FR-POS-DS-01,POS - Daily Summary,List columns (Date, Counter, Start Time, End Time, Opening Cash, Cash In, Sales, Cash, Card, Bank Transfer, Credit Sale),High,Approved
+FR-POS-DS-02,POS - Daily Summary,Cash reconciliation with variance,High,Approved
+FR-POS-DS-03,POS - Daily Summary,Drill-down to shift details,High,Approved
+FR-POS-DS-04,POS - Daily Summary,X-Report and Z-Report,High,Approved
+FR-ACC-EXP-01,Accounts - Expenses,List filters (Number, Date, Reference, Contact, Pay From, Comments, Gross, Net, Status),High,Implemented
+FR-ACC-EXP-02,Accounts - Expenses,Auto-number E-XXXXXX,High,Implemented
+FR-ACC-EXP-03,Accounts - Expenses,Pay From mandatory,High,Implemented
+FR-ACC-EXP-04,Accounts - Expenses,Multiple expense line items,High,Implemented
+FR-ACC-EXP-05,Accounts - Expenses,Expense Account search from COA,High,Implemented
+FR-ACC-EXP-06,Accounts - Expenses,Gross total calc,High,Implemented
+FR-ACC-EXP-07,Accounts - Expenses,Attachments support,Low,Approved
+FR-ACC-EXP-08,Accounts - Expenses,Journal entry (Debit Expense, Credit Bank/Cash),High,Implemented
+FR-ACC-JE-01,Accounts - Journal Entry,List filters (Number, Date, Memo, Reference, Amount, Status),High,Implemented
+FR-ACC-JE-02,Accounts - Journal Entry,Export to Excel,Low,Approved
+FR-ACC-JE-03,Accounts - Journal Entry,Auto-number JE-XXXXXX,High,Implemented
+FR-ACC-JE-04,Accounts - Journal Entry,Debit = Credit validation,High,Implemented
+FR-ACC-JE-05,Accounts - Journal Entry,Account search from COA,High,Implemented
+FR-ACC-JE-06,Accounts - Journal Entry,Total display,High,Implemented
+FR-ACC-JE-07,Accounts - Journal Entry,Memo mandatory,High,Implemented
+FR-ACC-JE-08,Accounts - Journal Entry,Attachments,Low,Approved
+FR-ACC-JE-09,Accounts - Journal Entry,Status workflow (Draft → Posted → Cancelled),High,Implemented
+FR-ACC-COA-01,Accounts - Chart of Accounts,Hierarchical grouping by type,High,Implemented
+FR-ACC-COA-02,Accounts - Chart of Accounts,Columns (Code, Name, System Name, Balance, Action),High,Implemented
+FR-ACC-COA-03,Accounts - Chart of Accounts,Filters by account type,High,Implemented
+FR-ACC-COA-04,Accounts - Chart of Accounts,Account code format XXX-XXXXX,High,Implemented
+FR-ACC-COA-05,Accounts - Chart of Accounts,Account types (Asset, Liability, Equity, Revenue, Expense, Contra),High,Implemented
+FR-ACC-COA-06,Accounts - Chart of Accounts,System accounts cannot be deleted,High,Implemented
+FR-ACC-COA-07,Accounts - Chart of Accounts,Add account form (Parent, Group, Code, Name),High,Implemented
+FR-ACC-COA-08,Accounts - Chart of Accounts,Opening balance via Journal Entry,High,Implemented
+FR-ACC-BA-01,Accounts - Bank Account,List columns (Account Title, Branch Name, Account Number, Action),High,Implemented
+FR-ACC-BA-02,Accounts - Bank Account,Search, Print, Export to Excel,Low,Approved
+FR-ACC-BA-03,Accounts - Bank Account,Add bank account form (Parent, Code, Bank Name, Branch, Title, Number, Account Name, Group, Use as credit card),High,Implemented
+FR-ACC-BA-04,Accounts - Bank Account,Account Group (Transactional/Control) immutable after creation,High,Implemented
+FR-ACC-BA-05,Accounts - Bank Account,Credit card checkbox (liability),Medium,Implemented
+FR-ACC-BD-01,Accounts - Bank Deposit,List filters (Number, Date, Bank Account, Deposit No., Total Amount, Status),High,Implemented
+FR-ACC-BD-02,Accounts - Bank Deposit,Auto-number BD-XXXXXX,High,Implemented
+FR-ACC-BD-03,Accounts - Bank Deposit,Bank Account mandatory,High,Implemented
+FR-ACC-BD-04,Accounts - Bank Deposit,Multiple deposit lines,High,Implemented
+FR-ACC-BD-05,Accounts - Bank Deposit,Add lines manually or from un-deposited payments,High,Implemented
+FR-ACC-BD-06,Accounts - Bank Deposit,Total Selected auto-calc,High,Implemented
+FR-ACC-BD-07,Accounts - Bank Deposit,Status workflow (Draft → Deposited → Cleared / Cancelled),High,Implemented
+FR-ACC-BD-08,Accounts - Bank Deposit,Journal entry (Debit Bank, Credit Undeposited Funds),High,Implemented
+FR-ACC-CN-01,Accounts - Credit Note,List filters (Number, Date, Reference, Contact, Account, Amount, Unadjusted Amount, Status),High,Implemented
+FR-ACC-CN-02,Accounts - Credit Note,Auto-number CN-XXXXXX,High,Implemented
+FR-ACC-CN-03,Accounts - Credit Note,Contact mandatory,High,Implemented
+FR-ACC-CN-04,Accounts - Credit Note,Account mandatory,High,Implemented
+FR-ACC-CN-05,Accounts - Credit Note,Make auto settlements checkbox,Medium,Implemented
+FR-ACC-CN-06,Accounts - Credit Note,Display open invoices table,High,Implemented
+FR-ACC-CN-07,Accounts - Credit Note,Allocation cannot exceed credit amount,High,Implemented
+FR-ACC-CN-08,Accounts - Credit Note,Journal entry (Debit selected Account, Credit A/R),High,Implemented
+FR-ACC-DN-01,Accounts - Debit Note,List filters,High,Implemented
+FR-ACC-DN-02,Accounts - Debit Note,Auto-number DN-XXXXXX,High,Implemented
+FR-ACC-DN-03,Accounts - Debit Note,Contact (vendor) mandatory,High,Implemented
+FR-ACC-DN-04,Accounts - Debit Note,Account mandatory,High,Implemented
+FR-ACC-DN-05,Accounts - Debit Note,Make auto settlements,Medium,Implemented
+FR-ACC-DN-06,Accounts - Debit Note,Display open purchase invoices table,High,Implemented
+FR-ACC-DN-07,Accounts - Debit Note,Journal entry (Debit A/P, Credit selected Account),High,Implemented
+FR-ACC-FT-01,Accounts - Funds Transfer,List filters (Number, Date, Reference, From Account, To Account, Amount, Status),High,Implemented
+FR-ACC-FT-02,Accounts - Funds Transfer,Auto-number FT-XXXXXX,High,Implemented
+FR-ACC-FT-03,Accounts - Funds Transfer,From/To Accounts mandatory and different,High,Implemented
+FR-ACC-FT-04,Accounts - Funds Transfer,Journal entry (Debit To, Credit From),High,Implemented
+FR-ACC-OC-01,Accounts - Other Collections,List filters,High,Implemented
+FR-ACC-OC-02,Accounts - Other Collections,Auto-number OC-XXXXXX,High,Implemented
+FR-ACC-OC-03,Accounts - Other Collections,Other Contact mandatory,High,Implemented
+FR-ACC-OC-04,Accounts - Other Collections,Multiple instruments,High,Implemented
+FR-ACC-OC-05,Accounts - Other Collections,Collection modes (Cash, Cheque, Bank Transfer),High,Implemented
+FR-ACC-OC-06,Accounts - Other Collections,Account Adjustments,High,Implemented
+FR-ACC-OP-01,Accounts - Other Payments,List filters,High,Implemented
+FR-ACC-OP-02,Accounts - Other Payments,Auto-number OP-XXXXXX,High,Implemented
+FR-ACC-OP-03,Accounts - Other Payments,Other Contact mandatory,High,Implemented
+FR-ACC-OP-04,Accounts - Other Payments,Multiple instruments,High,Implemented
+FR-ACC-OP-05,Accounts - Other Payments,Payment modes (Cash, Bank Transfer, Cheque),High,Implemented
+FR-ACC-OP-06,Accounts - Other Payments,Account Adjustments,High,Implemented
+FR-ACC-OP-07,Accounts - Other Payments,Account (debit) mandatory,High,Implemented
+FR-ACC-INST-01,Accounts - Instruments,List of all payment instruments,High,Implemented
+FR-ACC-INST-02,Accounts - Instruments,Filters (Payment Mode, Bank Name, Instrument No., Date, Amount, Status),High,Implemented
+FR-ACC-INST-03,Accounts - Instruments,Status update (Cleared, Bounced, Void),High,Implemented
+FR-ACC-OCS-01,Accounts - Other Contact Settlement,List filters (Number, Date, Contact, Total Amount, Status),High,Approved
+FR-ACC-OCS-02,Accounts - Other Contact Settlement,Auto-number OCS-XXXXXX,High,Approved
+FR-ACC-OCS-03,Accounts - Other Contact Settlement,Receivables and Received tables,High,Approved
+FR-ACC-OCS-04,Accounts - Other Contact Settlement,Make auto settlements checkbox,Medium,Approved
+FR-ACC-OCS-05,Accounts - Other Contact Settlement,Partial settlement allowed,High,Approved
+FR-ACC-OCS-06,Accounts - Other Contact Settlement,Status workflow (Draft → Approved → Completed / Cancelled),High,Approved
+FR-INV-SM-01,Inventory - Stock Movement,List filters (Number, Date, Reference, From Warehouse, To Warehouse, Status),High,Approved
+FR-INV-SM-02,Inventory - Stock Movement,Auto-number SM-XXXXXX,High,Approved
+FR-INV-SM-03,Inventory - Stock Movement,From/To Warehouses mandatory and different,High,Approved
+FR-INV-SM-04,Inventory - Stock Movement,Multiple products per movement,High,Approved
+FR-INV-SM-05,Inventory - Stock Movement,Barcode scanning,High,Approved
+FR-INV-SM-06,Inventory - Stock Movement,Status workflow (Draft → Completed → Cancelled),High,Approved
+FR-INV-SA-01,Inventory - Stock Adjustment,List filters (Number, Date, Adjustment Type, Reference, Status),High,Approved
+FR-INV-SA-02,Inventory - Stock Adjustment,Auto-number SA-XXXXXX,High,Approved
+FR-INV-SA-03,Inventory - Stock Adjustment,Adjustment Type mandatory,High,Approved
+FR-INV-SA-04,Inventory - Stock Adjustment,Multiple products per adjustment,High,Approved
+FR-INV-SA-05,Inventory - Stock Adjustment,Barcode scanning,High,Approved
+FR-INV-SA-06,Inventory - Stock Adjustment,Status workflow (Draft → Completed → Cancelled),High,Approved
+FR-INV-AT-01,Inventory - Adjustment Types,Add adjustment type form (Name, Account, Add/Subtract, Description),High,Approved
+FR-INV-AT-02,Inventory - Adjustment Types,Used in Stock Adjustment to control inventory direction,High,Approved
+FR-INV-AT-03,Inventory - Adjustment Types,Cannot delete if used,High,Approved
+FR-INV-SV-01,Inventory - Scheduled Valuation,List filters (Date, Naration, Status),High,Approved
+FR-INV-SV-02,Inventory - Scheduled Valuation,Manual or scheduled execution,High,Approved
+FR-INV-SV-03,Inventory - Scheduled Valuation,Report exportable (Excel/PDF),High,Approved
+FR-INV-PROD-01,Inventory - Product Master,Product types: Product, Service, Product Variant,High,Approved
+FR-INV-PROD-02,Inventory - Product Master,Track Inventory, Batch, Serial, Packaging, Assemble toggles (immutable after save),High,Approved
+FR-INV-PROD-03,Inventory - Product Master,Purchase settings (Purchase Price, Tax, Discount Account),High,Approved
+FR-INV-PROD-04,Inventory - Product Master,Sale settings (Sale Price, Sales Account, MRP, Sales Return Account),High,Approved
+FR-INV-PROD-05,Inventory - Product Master,Opening stock via Stock Adjustment (type 'Openings'),High,Approved
+FR-CONS-01,Inventory - Consignments,List filters (Number, Date, Vendor, Description, Status),High,Approved
+FR-CONS-02,Inventory - Consignments,Auto-number CG-XXXXXX,High,Approved
+FR-CONS-03,Inventory - Consignments,Consignment Out and In,High,Approved
+FR-CONS-04,Inventory - Consignments,Settlement via sales/purchase invoices,High,Approved
+FR-MFG-JO-01,Manufacturing - Job Orders,List filters (Number, Date, Reference, Assembly Product, Due Date, Quantity, Status),High,Approved
+FR-MFG-JO-02,Manufacturing - Job Orders,Auto-number JO-XXXXXX,High,Approved
+FR-MFG-JO-03,Manufacturing - Job Orders,Input (components) and Output (finished goods) tables,High,Approved
+FR-MFG-JO-04,Manufacturing - Job Orders,Completion decreases component stock, increases finished good stock, posts journal entry,High,Approved
+FR-MFG-JO-05,Manufacturing - Job Orders,Partial completion allowed,High,Approved
+FR-MFG-DS-01,Manufacturing - Disassembling,List filters (Number, Date, Reference, Assembly Product, Quantity, Status),High,Approved
+FR-MFG-DS-02,Manufacturing - Disassembling,Auto-number DS-XXXXXX,High,Approved
+FR-MFG-DS-03,Manufacturing - Disassembling,Product To Disassemble mandatory,High,Approved
+FR-MFG-DS-04,Manufacturing - Disassembling,Output (components recovered) table,High,Approved
+FR-MFG-DS-05,Manufacturing - Disassembling,Completion decreases finished good, increases component stock,High,Approved
+FR-REP-01,Reports,Reports categorised by module,High,Approved
+FR-REP-02,Reports,Date range and entity filters,High,Approved
+FR-REP-03,Reports,Export to Excel/PDF and Print,Low,Approved
+FR-REF-01,Refer And Earn,Referral dashboard with points, balance, URL,High,Approved
+FR-REF-02,Refer And Earn,Points History,Medium,Approved
+FR-REF-03,Refer And Earn,Signup reward and first payment reward,High,Approved
+FR-REF-04,Refer And Earn,Admin configuration (reward amounts, expiry, reports),Medium,Approved
+FR-DASH-01,Dashboard,"KPIs: Today, Yesterday, This Month, Last Month, This Year, Last Year Sales",High,Approved
+FR-DASH-02,Dashboard,Revenue vs Expense chart, Profit & Loss line chart,High,Approved
+FR-DASH-03,Dashboard,"Account Receivable Aging, Top Products, Top Customers, Cash & Bank balances, Low Inventory alerts",High,Approved
+FR-PAY-01,Payroll - Employees,Employee master (Code, Name, Department, Designation, Joining Date, Salary, NTN, CNIC, attachments),High,Approved
+FR-PAY-02,Payroll - Departments,Departments (Name, Manager),Medium,Approved
+FR-PAY-03,Payroll - Designations,Designations (Name, optional Department),Medium,Approved
+FR-PAY-04,Payroll - Projects,Projects (Name, Customer, Start/End Date, Budget, Status, Assigned Employees),Medium,Approved
+FR-SP-01,Sales Persons,List filters (Name, Status, Application User Email, Branch),High,Approved
+FR-SP-02,Sales Persons,Sales Person Name mandatory,High,Approved
+FR-SP-03,Sales Persons,"Type options: Salesman, Order Booker, Delivery Person",High,Approved
+FR-SP-04,Sales Persons,Permissions: Can change price, Can add discount,High,Approved
+FR-SP-05,Sales Persons,Is Manager flag,Medium,Approved
+FR-USER-01,Users & Roles,Predefined roles (Company Admin, Sales Manager, Purchase Assistant, etc.),High,Approved
+FR-USER-02,Users & Roles,Invite users via email, assign one or more roles,High,Approved
+FR-USER-03,Users & Roles,Role permissions: full CRUD+approve for managers; draft-only for assistants; view only for report viewers,High,Approved
+FR-OTHER-01,Other Contacts,List columns (Code, Name, Category, Contact Person, Email, Phone, Action),High,Approved
+FR-OTHER-02,Other Contacts,Auto-number 0-XXXXXX,High,Approved
+FR-OTHER-03,Other Contacts,Print Name and Other Contact Name mandatory,High,Approved
+FR-PRO-01,Prospects,List columns (Code, Name, Contact Person, Email, Phone, Action),High,Approved
+FR-PRO-02,Prospects,Auto-number P-XXXXXX,High,Approved
+FR-PRO-03,Prospects,Convert Prospect to Customer,High,Approved
+FR-COURIER-01,Couriers,List columns (Code, Name, Contact Person, Email, Phone, Action),High,Approved
+FR-COURIER-02,Couriers,Auto-number CS-XXXXXX,High,Approved
+FR-COURIER-03,Couriers,Print Name mandatory,High,Approved
+FR-CP-01,Customer Portal,Customer login and self-service (invoices, payments, tickets, delivery tracking),High,Approved
+FR-CP-02,Customer Portal,Admin configuration (modules visible, branding, payment gateway),Medium,Approved
+FR-CP-03,Customer Portal,Customer Portal Request form,Low,Approved
+FR-CAT-01,Setup - Categories,Separate masters for Customer, Vendor, Product, Other Contact categories, Brands,High,Approved
+FR-CAT-02,Setup - Categories,Category list: Name, Action,Medium,Approved
+FR-CAT-03,Setup - Categories,Category Name mandatory & unique,High,Approved
+FR-CAT-04,Setup - Categories,Product Categories support hierarchy (Parent Category),High,Approved
+FR-CAT-05,Setup - Categories,Brands: simple Name only,Medium,Approved
+FR-TAX-01,Setup - Taxes,List columns (Name, Abbreviation, Tax Type, Rate, Status, Action),High,Approved
+FR-TAX-02,Setup - Taxes,Tax Name and Abbreviation mandatory,High,Approved
+FR-TAX-03,Setup - Taxes,At least one of "Tax collected on sales" or "Tax paid on purchase",High,Approved
+FR-TAX-04,Setup - Taxes,Rate (%) decimal,High,Approved
+FR-WH-01,Setup - Warehouses,List columns (Name, Address1, City, Country, Status, Action),High,Approved
+FR-WH-02,Setup - Warehouses,Warehouse Name mandatory & unique,High,Approved
+FR-WH-03,Setup - Warehouses,Default warehouse flag,Medium,Approved
+FR-CF-01,Setup - Custom Fields,List columns (Name, Description, Applied On, Type, Action),High,Approved
+FR-CF-02,Setup - Custom Fields,Add custom field form (Name, Type, Description, Applied On checkboxes),High,Approved
+FR-CF-03,Setup - Custom Fields,Applied On options: Product, Customer, Vendor, Employee, Other Contact,High,Approved
+FR-CF-04,Setup - Custom Fields,Field appears on corresponding entity forms,High,Approved
+FR-MPL-01,Setup - Multiple Price Levels,List filters (Number, Name, Start Date, End Date, Reference, Status),High,Approved
+FR-MPL-02,Setup - Multiple Price Levels,Auto-number SP-XXXXXX,High,Approved
+FR-MPL-03,Setup - Multiple Price Levels,Name mandatory,High,Approved
+FR-MPL-04,Setup - Multiple Price Levels,Customer Categories multi-select,High,Approved
+FR-MPL-05,Setup - Multiple Price Levels,Product pricing table (special price / discount %, min quantity),High,Approved
+FR-MPL-06,Setup - Multiple Price Levels,Automatic price application in sales documents,High,Approved
+FR-TKTAG-01,CRM - Ticket Tags,List columns (Name, Description, Action),High,Approved
+FR-TKTAG-02,CRM - Ticket Tags,Name mandatory & unique,High,Approved
+FR-TKTAG-03,CRM - Ticket Tags,Tags assignable to tickets,Medium,Approved
+FR-TKSTAT-01,CRM - Ticket Statuses,List columns (Name, System Status, Action),High,Approved
+FR-TKSTAT-02,CRM - Ticket Statuses,One default status,High,Approved
+FR-IND-01,CRM - Industries,List columns (Name, Action),High,Approved
+FR-IND-02,CRM - Industries,Name mandatory & unique,High,Approved
+FR-LDSRC-01,CRM - Lead Sources,List columns (Name, Colour, Action),High,Approved
+FR-LDSRC-02,CRM - Lead Sources,Name mandatory, colour optional,Medium,Approved
+FR-LDST-01,CRM - Lead Statuses,List columns (Name, Action),High,Approved
+FR-LDST-02,CRM - Lead Statuses,Name mandatory,High,Approved
+FR-EVTYPE-01,CRM - Event Types,List columns (Name, Is Default, Action),High,Approved
+FR-EVTYPE-02,CRM - Event Types,Only one default,Medium,Approved
+FR-EVSTAT-01,CRM - Event Statuses,List columns (Name, Event Type, Abbreviation, Color, System Status, Action),High,Approved
+FR-EVSTAT-02,CRM - Event Statuses,Add form: Event Type, Name, Abbreviation, Color,High,Approved
+FR-CUST-01,Customers,Multi-filter list by Code, Name, Category and Active status,High,Implemented
+FR-CUST-02,Customers,List columns: Code, Name, Category, Contact Person, Email, Phone, Status, Action,High,Implemented
+FR-CUST-03,Customers,Auto-generate customer code C-XXXXXX using number_series table,High,Implemented
+FR-CUST-04,Customers,Print Name (Customer Name) mandatory field with validation,High,Implemented
+FR-CUST-05,Customers,Category dropdown from customer_categories master,Medium,Implemented
+FR-CUST-06,Customers,Contact Person field,Medium,Implemented
+FR-CUST-07,Customers,Three email fields (email_1, email_2, email_3),Medium,Implemented
+FR-CUST-08,Customers,Three phone fields (phone_1, phone_2, phone_3),Medium,Implemented
+FR-CUST-09,Customers,Opening Balance field,Medium,Implemented
+FR-CUST-10,Customers,Credit Limit field,Medium,Implemented
+FR-CUST-11,Customers,Default Discount % and Withholding Tax % fields,Medium,Implemented
+FR-CUST-12,Customers,Active/Inactive status toggle,High,Implemented
+FR-CUST-13,Customers,CRUD REST API (list, create, read, update, delete),High,Implemented
+FR-CUST-14,Customers,Paginated customer list (20 per page),Medium,Implemented
+FR-VEND-01,Vendors,Multi-filter list by Code, Name, Category and Active status,High,Implemented
+FR-VEND-02,Vendors,List columns: Code, Name, Category, Contact Person, Email, Phone, Status, Action,High,Implemented
+FR-VEND-03,Vendors,Auto-generate vendor code V-XXXXXX using number_series table,High,Implemented
+FR-VEND-04,Vendors,Vendor Name mandatory with validation,High,Implemented
+FR-VEND-05,Vendors,Category dropdown from vendor_categories master,Medium,Implemented
+FR-VEND-06,Vendors,Contact Person and Address fields,Medium,Implemented
+FR-VEND-07,Vendors,Email and two phone fields,Medium,Implemented
+FR-VEND-08,Vendors,Opening Balance and Credit Limit Days fields,Medium,Implemented
+FR-VEND-09,Vendors,Is Principal flag (marks key/primary supplier),Medium,Implemented
+FR-VEND-10,Vendors,Active/Inactive status toggle,High,Implemented
+FR-VEND-11,Vendors,CRUD REST API (list, create, read, update, delete),High,Implemented
+FR-VEND-12,Vendors,Paginated vendor list (20 per page),Medium,Implemented
+FR-INV-PROD-01,Products,Product types: Product, Service, Product Variant,High,Implemented
+FR-INV-PROD-02,Products,Track Inventory, Batch, Serial, Packaging, Assemble toggles (immutable after save),High,Implemented
+FR-INV-PROD-03,Products,Purchase settings (Purchase Price, Tax, Manage Purchase Tax),High,Implemented
+FR-INV-PROD-04,Products,Sale settings (Sale Price, MRP, MRP exclusive of tax, Don't allow public),High,Implemented
+FR-INV-PROD-05,Products,Auto-generate product code P-XXXXXX using number_series table,High,Implemented
+FR-INV-PROD-06,Products,Filter list by Code, Name, Type, Category, Brand, Status,High,Implemented
+FR-INV-PROD-07,Products,List columns: Code, Name, Type, Category, Brand, UOM, Purchase Price, Sale Price, Status,High,Implemented
+FR-INV-PROD-08,Products,Category dropdown with hierarchy (parent › child),Medium,Implemented
+FR-INV-PROD-09,Products,Brand dropdown from brands master,Medium,Implemented
+FR-INV-PROD-10,Products,Tax dropdown filtered by applies_to (sales/purchases),Medium,Implemented
+FR-INV-PROD-11,Products,CRUD REST API (list, create, read, update, delete),High,Implemented
+FR-INV-PROD-12,Products,Paginated product list (20 per page),Medium,Implemented

@@ -1,0 +1,3 @@
+ALTER TABLE import_invoices ADD COLUMN IF NOT EXISTS discount_pct    NUMERIC(10,4) DEFAULT 0;
+ALTER TABLE import_invoices ADD COLUMN IF NOT EXISTS shipping_charges NUMERIC(18,2) DEFAULT 0;
+ALTER TABLE import_invoices ADD COLUMN IF NOT EXISTS round_off        NUMERIC(18,2) DEFAULT 0;

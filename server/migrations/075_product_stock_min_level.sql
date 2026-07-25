@@ -1,0 +1,2 @@
+ALTER TABLE product_stock
+  ADD COLUMN IF NOT EXISTS min_stock_level NUMERIC(18,4) NOT NULL DEFAULT 0;

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><title>Adding TechZone Electronics…</title></head>
+<body>
+<p>Adding TechZone Electronics, please wait…</p>
+<script>
+(function () {
+  try {
+    var biz = {
+      id: 'techzone-demo-2024',
+      name: 'TechZone Electronics',
+      type: 'Wholesale',
+      color: '#2563eb',
+      initials: 'TE',
+      createdAt: new Date().toISOString(),
+      isNew: false
+    };
+    var userId = localStorage.getItem('evotrade_current_id') || 'admin';
+    var key = 'evotrade_businesses_' + userId;
+    var list = [];
+    try { list = JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) {}
+    if (!list.find(function(b){ return b.id === biz.id; })) list.push(biz);
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch(e) {}
+  window.location.href = '/login';
+})();
+</script>
+</body>
+</html>

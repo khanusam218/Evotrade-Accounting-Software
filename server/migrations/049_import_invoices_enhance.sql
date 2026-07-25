@@ -1,0 +1,2 @@
+ALTER TABLE import_invoices ADD COLUMN IF NOT EXISTS subject TEXT;
+ALTER TABLE import_invoice_lines ADD COLUMN IF NOT EXISTS discount_pct NUMERIC(10,4) DEFAULT 0;

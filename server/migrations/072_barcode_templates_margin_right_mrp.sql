@@ -1,0 +1,2 @@
+ALTER TABLE barcode_templates ADD COLUMN IF NOT EXISTS margin_right NUMERIC(10,4) NOT NULL DEFAULT 0;
+ALTER TABLE barcode_templates ADD COLUMN IF NOT EXISTS print_mrp    BOOLEAN      NOT NULL DEFAULT false;

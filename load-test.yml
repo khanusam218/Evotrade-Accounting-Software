@@ -1,0 +1,56 @@
+config:
+  target: "http://localhost:3001"
+  phases:
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 60
+      arrivalRate: 10
+      name: "Sustained load"
+    - duration: 30
+      arrivalRate: 20
+      name: "Spike"
+
+scenarios:
+  - name: "Authentication Flow"
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            id: "admin"
+            password: "admin"
+          capture:
+            json: "$.token"
+            as: "authToken"
+      - think: 2
+      - get:
+          url: "/api/chart-of-accounts"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+
+  - name: "Chart of Accounts Access"
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            id: "admin"
+            password: "admin"
+          capture:
+            json: "$.token"
+            as: "token"
+      - get:
+          url: "/api/chart-of-accounts"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - think: 1
+      - get:
+          url: "/api/expenses"
+          headers:
+            Authorization: "Bearer {{ token }}"
+
+  - name: "Unauthenticated Access (Should Fail)"
+    flow:
+      - get:
+          url: "/api/chart-of-accounts"
+          expect:
+            - statusCode: 401
