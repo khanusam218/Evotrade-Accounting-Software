@@ -1,4 +1,6 @@
 require('dotenv').config();
+const path    = require('path');
+const fs      = require('fs');
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');
@@ -88,8 +90,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(rateLimitGeneral);
 
 app.use('/api/auth', authLimiter);
-app.use((req, _res, next) => {
-  if (req.path === '/api/health' || req.path.startsWith('/api/auth')) {
+app.use('/api', (req, _res, next) => {
+  if (req.path === '/health' || req.path.startsWith('/auth')) {
     const companyId = 'evotrade';
     return pool.companyAls.run({ companyId }, () => next());
   }
@@ -171,6 +173,16 @@ app.use('/api/dashboard',                 dashboardRouter);
 app.use('/api/reports',                   reportsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+// Serve the built React app (client/dist) when present, so a single Node
+// process can host both the API and the frontend on shared hosting.
+const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 app.use((err, _req, res, _next) => {
   console.error('[API Error]', err?.message || err?.toString(), err?.code || '');
