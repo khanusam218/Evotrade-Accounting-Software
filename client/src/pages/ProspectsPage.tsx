@@ -1,11 +1,8 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../api/apiFetch';
-
-const COUNTRIES = [
-  'Pakistan', 'Afghanistan', 'Bangladesh', 'China', 'India', 'Iran',
-  'Iraq', 'Jordan', 'Kuwait', 'Malaysia', 'Oman', 'Qatar', 'Saudi Arabia',
-  'Turkey', 'UAE', 'United Kingdom', 'United States', 'Other',
-];
+import { validateCNIC, validateEmail, validateName, validateNTN, validatePhone, validateZip } from '../utils/validators';
+import { COUNTRIES, PK_PROVINCES, PK_CITIES } from '../data/locations';
+import SearchSelect from '../components/SearchSelect';
 
 interface Prospect {
   id: number; code: string; print_name: string; display_name?: string;
@@ -53,6 +50,7 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
   const [contactPerson, setContactPerson] = useState(initial?.contact_person ?? '');
   const [ntn, setNtn]               = useState(initial?.ntn ?? '');
   const [cnic, setCnic]             = useState(initial?.cnic ?? '');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -90,7 +88,17 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
   async function submit(andNew: boolean, e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!printName.trim()) { setError('Prospect Name is required'); return; }
+    const errs: Record<string, string> = {};
+    const nameErr = validateName(printName, 'Prospect name'); if (nameErr) errs.printName = nameErr;
+    const emailErr = validateEmail(email); if (emailErr) errs.email = emailErr;
+    const phoneErr = validatePhone(phone); if (phoneErr) errs.phone = phoneErr;
+    const phone2Err = validatePhone(phone2); if (phone2Err) errs.phone2 = phone2Err;
+    const phone3Err = validatePhone(phone3); if (phone3Err) errs.phone3 = phone3Err;
+    const zipErr = validateZip(zip); if (zipErr) errs.zip = zipErr;
+    const ntnErr = validateNTN(ntn); if (ntnErr) errs.ntn = ntnErr;
+    const cnicErr = validateCNIC(cnic); if (cnicErr) errs.cnic = cnicErr;
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true);
     try {
       if (andNew) await onSaveAndNew(buildPayload());
@@ -178,8 +186,9 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
                   <div className="flex-1 space-y-3">
                     <div>
                       <label className="label">Prospect Name <span className="text-red-500">*</span></label>
-                      <input className="input" placeholder="Full prospect / company name"
+                      <input className={`input ${fieldErrors.printName ? 'border-red-500' : ''}`} placeholder="Full prospect / company name"
                         value={printName} onChange={e => setPrintName(e.target.value)} required />
+                      {fieldErrors.printName && <p className="text-xs text-red-500 mt-1">{fieldErrors.printName}</p>}
                     </div>
                     <div>
                       <label className="label">Display Name</label>
@@ -192,26 +201,30 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
                 {/* Email */}
                 <div>
                   <label className="label">Email</label>
-                  <input type="email" className="input" placeholder="email@example.com"
+                  <input type="email" className={`input ${fieldErrors.email ? 'border-red-500' : ''}`} placeholder="email@example.com"
                     value={email} onChange={e => setEmail(e.target.value)} />
+                  {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
                 </div>
 
                 {/* Phones */}
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="label">Phone 1</label>
-                    <input className="input" placeholder="+92 300 0000000"
+                    <input className={`input ${fieldErrors.phone ? 'border-red-500' : ''}`} placeholder="+92 300 0000000"
                       value={phone} onChange={e => setPhone(e.target.value)} />
+                    {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
                   </div>
                   <div>
                     <label className="label">Phone 2</label>
-                    <input className="input" placeholder="Alternate phone"
+                    <input className={`input ${fieldErrors.phone2 ? 'border-red-500' : ''}`} placeholder="Alternate phone"
                       value={phone2} onChange={e => setPhone2(e.target.value)} />
+                    {fieldErrors.phone2 && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone2}</p>}
                   </div>
                   <div>
                     <label className="label">Phone 3</label>
-                    <input className="input" placeholder="Another phone"
+                    <input className={`input ${fieldErrors.phone3 ? 'border-red-500' : ''}`} placeholder="Another phone"
                       value={phone3} onChange={e => setPhone3(e.target.value)} />
+                    {fieldErrors.phone3 && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone3}</p>}
                   </div>
                 </div>
 
@@ -251,18 +264,19 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="label">City</label>
-                    <input className="input" placeholder="City"
-                      value={city} onChange={e => setCity(e.target.value)} />
+                    <SearchSelect value={city} onChange={setCity}
+                      options={country === 'Pakistan' ? PK_CITIES : []} placeholder="City" />
                   </div>
                   <div>
                     <label className="label">State / Province</label>
-                    <input className="input" placeholder="State"
-                      value={stateVal} onChange={e => setStateVal(e.target.value)} />
+                    <SearchSelect value={stateVal} onChange={setStateVal}
+                      options={country === 'Pakistan' ? PK_PROVINCES : []} placeholder="State" />
                   </div>
                   <div>
                     <label className="label">ZIP / Postal Code</label>
-                    <input className="input" placeholder="00000"
+                    <input className={`input ${fieldErrors.zip ? 'border-red-500' : ''}`} placeholder="00000"
                       value={zip} onChange={e => setZip(e.target.value)} />
+                    {fieldErrors.zip && <p className="text-xs text-red-500 mt-1">{fieldErrors.zip}</p>}
                   </div>
                 </div>
                 <div>
@@ -282,13 +296,15 @@ function ProspectForm({ initial, onSave, onSaveAndNew, onClose }: FormProps) {
                     <label className="label" style={{ color: '#15803d' }}>NTN</label>
                     <input className="input" placeholder="National Tax Number"
                       value={ntn} onChange={e => setNtn(e.target.value)}
-                      style={{ borderColor: '#bbf7d0' }} />
+                      style={{ borderColor: fieldErrors.ntn ? '#ef4444' : '#bbf7d0' }} />
+                    {fieldErrors.ntn && <p className="text-xs text-red-500 mt-1">{fieldErrors.ntn}</p>}
                   </div>
                   <div>
                     <label className="label" style={{ color: '#15803d' }}>CNIC</label>
                     <input className="input" placeholder="00000-0000000-0"
                       value={cnic} onChange={e => setCnic(e.target.value)}
-                      style={{ borderColor: '#bbf7d0' }} />
+                      style={{ borderColor: fieldErrors.cnic ? '#ef4444' : '#bbf7d0' }} />
+                    {fieldErrors.cnic && <p className="text-xs text-red-500 mt-1">{fieldErrors.cnic}</p>}
                   </div>
                 </div>
               </div>

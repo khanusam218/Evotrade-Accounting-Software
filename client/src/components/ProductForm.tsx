@@ -1,18 +1,20 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import type { Brand, Product, ProductCategory, ProductFormData, ProductStockLevel, Tax } from '../types/product';
-import type { Warehouse } from '../types/warehouse';
+import type { Brand, Product, ProductCategory, ProductFormData, Tax } from '../types/product';
 import {
   createProduct, getBrands, getNextProductCode,
-  getProductCategories, getProductStockLevels, getTaxes, updateProduct,
-  setProductStockLevel, deleteProductStockLevel,
+  getProductCategories, getTaxes, updateProduct,
 } from '../api/products';
-import { getWarehouses } from '../api/warehouses';
+import { validateItemName, validatePositive } from '../utils/validators';
+import CustomFieldsTab from './CustomFieldsTab';
+import { getVendors } from '../api/vendors';
+import type { Vendor } from '../types/vendor';
 
 interface Props {
   product: Product | null;
   onClose: () => void;
   onSaved: () => void;
   onRefresh?: () => void;
+  onSavedAndNew?: () => void;
 }
 
 const EMPTY: ProductFormData = {
@@ -21,9 +23,12 @@ const EMPTY: ProductFormData = {
   track_inventory: false, manage_batch: false, manage_serial: false,
   has_packaging: false, is_assembled: false,
   is_purchased: false, purchase_price: '', purchase_tax_id: '', manage_purchase_tax: false,
-  is_sold: false, sale_price: '', mrp: '', mrp_exclusive_of_tax: false, dont_allow_public: false,
+  is_sold: false, sale_price: '', sale_tax_id: '', mrp: '', mrp_exclusive_of_tax: false, dont_allow_public: false,
   is_active: true,
   description: '', short_description: '',
+  image: null,
+  principal_vendor_id: '',
+  hs_code: '',
 };
 
 function toFormData(p: Product): ProductFormData {
@@ -40,10 +45,14 @@ function toFormData(p: Product): ProductFormData {
     purchase_tax_id: p.purchase_tax_id ? String(p.purchase_tax_id) : '',
     manage_purchase_tax: p.manage_purchase_tax, is_sold: p.is_sold,
     sale_price: p.sale_price != null ? String(p.sale_price) : '',
+    sale_tax_id: p.sale_tax_id ? String(p.sale_tax_id) : '',
     mrp: p.mrp != null ? String(p.mrp) : '',
     mrp_exclusive_of_tax: p.mrp_exclusive_of_tax,
     dont_allow_public: p.dont_allow_public, is_active: p.is_active,
     description: p.description ?? '', short_description: p.short_description ?? '',
+    image: p.image ?? null,
+    principal_vendor_id: p.principal_vendor_id ? String(p.principal_vendor_id) : '',
+    hs_code: p.hs_code ?? '',
   };
 }
 
@@ -51,200 +60,11 @@ type FormTab = 'general' | 'detail' | 'custom' | 'packings' | 'catalog' | 'stock
 
 const UOM_OPTIONS = ['PCS', 'KG', 'GM', 'LTR', 'ML', 'MTR', 'FT', 'BOX', 'DOZEN', 'SET', 'PAIR', 'ROLL', 'BAG', 'TON'];
 
-function CustomFieldsCard() {
-  const [field, setField]   = useState('');
-  const [adding, setAdding] = useState(false);
-  return (
-    <div className="border border-gray-200 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Fields</h3>
-      <div className="flex items-end gap-3">
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1">Field <span className="text-red-500">*</span></label>
-          <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
-            value={field} onChange={e => setField(e.target.value)}>
-            <option value="">-Choose-</option>
-          </select>
-        </div>
-        {adding ? (
-          <div className="flex gap-2">
-            <button type="button" className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-2 rounded">+ ADD</button>
-            <button type="button" onClick={() => setAdding(false)} className="bg-red-100 hover:bg-red-200 text-red-600 text-xs font-medium px-3 py-2 rounded">× CANCEL</button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setAdding(true)} className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-2 rounded">+ ADD</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function PlaceholderTab({ label }: { label: string }) {
   return <div className="flex items-center justify-center py-20 text-gray-400 text-sm">{label} settings coming soon.</div>;
 }
 
-interface StockLevelTabProps {
-  productId: number;
-}
-
-function StockLevelTab({ productId }: StockLevelTabProps) {
-  const [levels,       setLevels]       = useState<ProductStockLevel[]>([]);
-  const [warehouses,   setWarehouses]   = useState<Warehouse[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [newWarehouse, setNewWarehouse] = useState('');
-  const [newMinLevel,  setNewMinLevel]  = useState('');
-  const [editingId,    setEditingId]    = useState<number | null>(null);
-  const [editValue,    setEditValue]    = useState('');
-  const [saving,       setSaving]       = useState(false);
-
-  function reload() {
-    setLoading(true);
-    Promise.all([getProductStockLevels(productId), getWarehouses()])
-      .then(([lv, wh]) => { setLevels(lv); setWarehouses(wh); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => { reload(); }, [productId]);
-
-  const availableWarehouses = warehouses.filter(
-    w => w.is_active && !levels.find(l => l.warehouse_id === w.id)
-  );
-
-  async function handleAdd() {
-    if (!newWarehouse) return;
-    setSaving(true);
-    try {
-      await setProductStockLevel(productId, Number(newWarehouse), parseFloat(newMinLevel) || 0);
-      setNewWarehouse(''); setNewMinLevel('');
-      reload();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'An error occurred');
-    } finally { setSaving(false); }
-  }
-
-  function cancelAdd() {
-    setNewWarehouse(''); setNewMinLevel('');
-  }
-
-  function startEdit(level: ProductStockLevel) {
-    setEditingId(level.id);
-    setEditValue(String(level.min_stock_level));
-  }
-
-  async function confirmEdit(level: ProductStockLevel) {
-    setSaving(true);
-    try {
-      await setProductStockLevel(productId, level.warehouse_id, parseFloat(editValue) || 0);
-      setEditingId(null);
-      reload();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'An error occurred');
-    } finally { setSaving(false); }
-  }
-
-  function cancelEdit() {
-    setEditingId(null); setEditValue('');
-  }
-
-  async function handleRemove(level: ProductStockLevel) {
-    if (!window.confirm(`Remove minimum stock level for ${level.warehouse_name}?`)) return;
-    setSaving(true);
-    try {
-      await deleteProductStockLevel(productId, level.warehouse_id);
-      reload();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'An error occurred');
-    } finally { setSaving(false); }
-  }
-
-  const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500';
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Loading…</div>;
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-200 bg-gray-50">
-            <th className="px-4 py-3 text-left font-semibold text-gray-800">Warehouse</th>
-            <th className="px-4 py-3 text-left font-semibold text-gray-800">Minimum Stock Level</th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-800 w-24">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {levels.map(level => (
-            <tr key={level.id} className="border-b border-gray-100">
-              <td className="px-4 py-2 text-gray-800">{level.warehouse_name}</td>
-              <td className="px-4 py-2">
-                {editingId === level.id ? (
-                  <input type="number" min="0" step="0.01" autoFocus className={inputCls}
-                    value={editValue} onChange={e => setEditValue(e.target.value)} />
-                ) : (
-                  <span className="text-gray-700">{level.min_stock_level}</span>
-                )}
-              </td>
-              <td className="px-4 py-2 text-right">
-                {editingId === level.id ? (
-                  <div className="flex items-center justify-end gap-3">
-                    <button type="button" disabled={saving} onClick={() => confirmEdit(level)}
-                      className="text-green-600 hover:text-green-700 disabled:opacity-50" title="Save">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    </button>
-                    <button type="button" disabled={saving} onClick={cancelEdit}
-                      className="text-gray-400 hover:text-red-500 disabled:opacity-50" title="Cancel">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-end gap-3">
-                    <button type="button" onClick={() => startEdit(level)}
-                      className="text-gray-400 hover:text-green-600" title="Edit">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    </button>
-                    <button type="button" onClick={() => handleRemove(level)}
-                      className="text-gray-400 hover:text-red-500" title="Remove">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                    </button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-
-          {/* Add new row */}
-          <tr>
-            <td className="px-4 py-2">
-              <select className={inputCls} value={newWarehouse} onChange={e => setNewWarehouse(e.target.value)}>
-                <option value="">-Choose-</option>
-                {availableWarehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </td>
-            <td className="px-4 py-2">
-              <input type="number" min="0" step="0.01" placeholder="Minimum Stock Level" className={inputCls}
-                value={newMinLevel} onChange={e => setNewMinLevel(e.target.value)} />
-            </td>
-            <td className="px-4 py-2 text-right">
-              <div className="flex items-center justify-end gap-3">
-                <button type="button" disabled={saving || !newWarehouse} onClick={handleAdd}
-                  className="text-green-600 hover:text-green-700 disabled:opacity-30" title="Add">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                </button>
-                <button type="button" disabled={saving} onClick={cancelAdd}
-                  className="text-gray-400 hover:text-red-500 disabled:opacity-50" title="Clear">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export default function ProductForm({ product, onClose, onSaved, onRefresh }: Props) {
+export default function ProductForm({ product, onClose, onSaved, onRefresh, onSavedAndNew }: Props) {
   const isEdit = product !== null;
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -256,6 +76,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
   const [taxes,      setTaxes]      = useState<Tax[]>([]);
   const [saving,     setSaving]     = useState(false);
   const [touched,    setTouched]    = useState(false);
+  const [errors,     setErrors]     = useState<{ name?: string; purchase_price?: string; sale_price?: string; mrp?: string }>({});
 
   // UI-only state
   const [fractionalMode,    setFractionalMode]    = useState<'price' | 'qty'>('price');
@@ -267,7 +88,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
   const [salesReturnAcc,    setSalesReturnAcc]    = useState('Sales Return');
 
   // Detail tab UI-only state
-  const [principal,         setPrincipal]         = useState('');
+  const [vendors,           setVendors]           = useState<Vendor[]>([]);
   const [shortName,         setShortName]         = useState('');
   const [sku,               setSku]               = useState('');
   const [barcode,           setBarcode]           = useState('');
@@ -276,10 +97,6 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
   const [width,             setWidth]             = useState('');
   const [length,            setLength]            = useState('');
   const [modelNumber,       setModelNumber]       = useState('');
-  const [hsCode,            setHsCode]            = useState('');
-  const [shortDesc,         setShortDesc]         = useState('');
-  const [description,       setDescription]       = useState('');
-  const [productImage,      setProductImage]      = useState<string | null>(null);
 
   // Catalog tab UI-only state
   const [catalogContent,    setCatalogContent]    = useState('');
@@ -328,23 +145,28 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
     getProductCategories().then(setCategories).catch(() => {});
     getBrands().then(setBrands).catch(() => {});
     getTaxes().then(d => setTaxes(Array.isArray(d) ? d : [])).catch(() => {});
+    getVendors({ limit: 500 }).then(r => setVendors(r.data)).catch(() => {});
     if (!isEdit) getNextProductCode().then(setNextCode).catch(() => {});
   }, [isEdit]);
 
+  const ERROR_KEYS = ['name', 'purchase_price', 'sale_price', 'mrp'] as const;
+
   function set<K extends keyof ProductFormData>(key: K, value: ProductFormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    if ((ERROR_KEYS as readonly string[]).includes(key as string)) {
+      setErrors(prev => ({ ...prev, [key as typeof ERROR_KEYS[number]]: undefined }));
+    }
   }
 
   function resetForm() {
-    setForm(EMPTY); setTouched(false); setTab('general');
+    setForm(EMPTY); setTouched(false); setTab('general'); setErrors({});
     setFractionalMode('price');
     setInventoryAccount('Inventory'); setExpenseAccount('Cost of Goods Sold');
     setPurchaseDiscAcc('Discounts Received'); setSalesAccount('Sales');
     setSalesDiscAcc('Discounts Given'); setSalesReturnAcc('Sales Return');
-    setPrincipal(''); setShortName(''); setSku(''); setBarcode('');
+    setShortName(''); setSku(''); setBarcode('');
     setWeight(''); setHeight(''); setWidth(''); setLength('');
-    setModelNumber(''); setHsCode(''); setShortDesc(''); setDescription('');
-    setProductImage(null);
+    setModelNumber('');
     setCatalogContent(''); setGalleryImages([]);
     if (editorRef.current) editorRef.current.innerHTML = '';
     setTaxesOnSale([]); setTaxesOnPurchase([]);
@@ -356,7 +178,20 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      setProductImage(event.target?.result as string);
+      const img = new Image();
+      img.onload = () => {
+        const size = 300;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { set('image', event.target?.result as string); return; }
+        const scale = Math.max(size / img.width, size / img.height);
+        const dw = img.width * scale, dh = img.height * scale;
+        ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+        set('image', canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   }
@@ -377,15 +212,43 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
     setGalleryImages(prev => prev.filter((_, i) => i !== index));
   }
 
+  function validate(): boolean {
+    const errs: typeof errors = {};
+    const nameErr = validateItemName(form.name, 'Product name'); if (nameErr) errs.name = nameErr;
+    if (form.purchase_price.trim()) {
+      const err = validatePositive(parseFloat(form.purchase_price) || 0, 'Purchase price'); if (err) errs.purchase_price = err;
+    }
+    if (form.sale_price.trim()) {
+      const err = validatePositive(parseFloat(form.sale_price) || 0, 'Sale price'); if (err) errs.sale_price = err;
+    }
+    if (form.mrp.trim()) {
+      const err = validatePositive(parseFloat(form.mrp) || 0, 'Maximum retail price'); if (err) errs.mrp = err;
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   async function handleSave(andNew: boolean) {
     setTouched(true);
-    if (!form.name.trim() || (form.type !== 'service' && !form.unit_of_measurement.trim())) { setTab('general'); return; }
+    const uomMissing = form.type !== 'service' && !form.unit_of_measurement.trim();
+    const formValid = validate();
+    if (uomMissing || !formValid) { setTab('general'); return; }
     setSaving(true);
     try {
       if (isEdit) await updateProduct(product.id, form);
       else        await createProduct(form);
-      if (andNew) { onRefresh?.(); resetForm(); }
-      else        { onSaved(); }
+      if (andNew) {
+        onRefresh?.();
+        // Editing: this component instance still holds the record being
+        // edited via the `product` prop, which can't be reset locally —
+        // hand back to the parent to swap in a fresh "add" instance instead
+        // of resetForm()'ing in place (that left the code field showing the
+        // OLD product while every other field went blank, and a second save
+        // would have overwritten the original record with that blank data).
+        if (isEdit) onSavedAndNew?.();
+        else resetForm();
+      }
+      else { onSaved(); }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'An error occurred');
     } finally { setSaving(false); }
@@ -393,7 +256,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
 
   const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500';
   const errCls   = 'w-full border border-red-400 rounded px-3 py-2 text-sm focus:outline-none focus:border-red-500';
-  const nameErr  = touched && !form.name.trim();
+  const nameErr  = touched && errors.name;
   const uomErr   = touched && form.type !== 'service' && !form.unit_of_measurement.trim();
 
   const selectCls = 'border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 bg-white';
@@ -478,7 +341,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                   <input type="text" placeholder="Name"
                     className={nameErr ? errCls : inputCls}
                     value={form.name} onChange={e => set('name', e.target.value)} />
-                  {nameErr && <p className="mt-0.5 text-xs text-red-600">Product name is required.</p>}
+                  {nameErr && <p className="mt-0.5 text-xs text-red-600">{errors.name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
@@ -603,8 +466,9 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Purchase Price (PKR)</label>
                         <input type="number" min="0" step="0.01" placeholder="Purchase Price"
-                          className={inputCls} value={form.purchase_price}
+                          className={errors.purchase_price ? errCls : inputCls} value={form.purchase_price}
                           onChange={e => set('purchase_price', e.target.value)} />
+                        {errors.purchase_price && <p className="mt-0.5 text-xs text-red-600">{errors.purchase_price}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Expense Account</label>
@@ -658,8 +522,9 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Sale Price (PKR)</label>
                         <input type="number" min="0" step="0.01" placeholder="Sale Price"
-                          className={inputCls} value={form.sale_price}
+                          className={errors.sale_price ? errCls : inputCls} value={form.sale_price}
                           onChange={e => set('sale_price', e.target.value)} />
+                        {errors.sale_price && <p className="mt-0.5 text-xs text-red-600">{errors.sale_price}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Sales Account</label>
@@ -677,13 +542,14 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Sale Taxes</label>
-                        <button type="button" onClick={() => setTab('taxes')} className="flex items-center gap-1 text-green-600 hover:text-green-700 text-sm font-medium">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          Manage Taxes
-                        </button>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Sale Tax</label>
+                        <select className={selectCls + ' w-full'} value={form.sale_tax_id}
+                          onChange={e => set('sale_tax_id', e.target.value)}>
+                          <option value="">No tax</option>
+                          {taxes.filter(t => t.applies_to_sales).map(t => (
+                            <option key={t.id} value={t.id}>{t.name} ({t.rate}%)</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 
@@ -692,8 +558,9 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Maximum Retail Price (PKR)</label>
                         <input type="number" min="0" step="0.01" placeholder="Retail Price"
-                          className={inputCls} value={form.mrp}
+                          className={errors.mrp ? errCls : inputCls} value={form.mrp}
                           onChange={e => set('mrp', e.target.value)} />
+                        {errors.mrp && <p className="mt-0.5 text-xs text-red-600">{errors.mrp}</p>}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Sales Return Account</label>
@@ -749,12 +616,13 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                     </select>
                   </div>
 
-                  {/* Principal */}
+                  {/* Principal (preferred/primary vendor for this product) */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Principal</label>
-                    <select className={inputCls} value={principal}
-                      onChange={e => setPrincipal(e.target.value)}>
-                      <option value="">Type to search principal</option>
+                    <select className={inputCls} value={form.principal_vendor_id}
+                      onChange={e => set('principal_vendor_id', e.target.value)}>
+                      <option value="">-Choose-</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                     </select>
                   </div>
 
@@ -835,10 +703,8 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
                   {/* HS Code */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">HS Code</label>
-                    <select className={inputCls} value={hsCode}
-                      onChange={e => setHsCode(e.target.value)}>
-                      <option value="">Type to search HS Code</option>
-                    </select>
+                    <input type="text" placeholder="e.g. 8517.12" className={inputCls}
+                      value={form.hs_code} onChange={e => set('hs_code', e.target.value)} />
                   </div>
 
                   {/* Short Description */}
@@ -860,8 +726,8 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
               {/* Right column: Product image */}
               <div className="flex-shrink-0 flex flex-col items-center">
                 <div className="w-32 h-32 rounded-full border-2 border-gray-300 flex items-center justify-center bg-gray-50">
-                  {productImage ? (
-                    <img src={productImage} alt="Product" className="w-full h-full rounded-full object-cover" />
+                  {form.image ? (
+                    <img src={form.image} alt="Product" className="w-full h-full rounded-full object-cover" />
                   ) : (
                     <div className="text-center">
                       <svg className="w-8 h-8 text-gray-400 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -882,7 +748,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
             </div>
           )}
 
-          {tab === 'custom'   && <CustomFieldsCard />}
+          {tab === 'custom'   && <CustomFieldsTab entityType="product" entityId={product?.id ?? null} />}
           {tab === 'packings' && <PlaceholderTab label="Multiple Packings/SKUs" />}
 
           {/* ══ CATALOG TAB ════════════════════════════════════════════════════ */}
@@ -1044,13 +910,7 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh }: Pr
             </div>
           )}
 
-          {tab === 'stock' && (
-            isEdit
-              ? <StockLevelTab productId={product.id} />
-              : <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
-                  Save the product first to set warehouse stock levels.
-                </div>
-          )}
+          {tab === 'stock'    && <PlaceholderTab label="Stock Level" />}
           {/* ══ TAXES TAB ══════════════════════════════════════════════════════ */}
           {tab === 'taxes' && (
             <div className="grid grid-cols-2 gap-8">

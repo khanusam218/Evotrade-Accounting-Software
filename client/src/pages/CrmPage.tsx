@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CrmLead, CrmActivity } from '../types/crmLead';
-import { getCrmLeads, getCrmLead, deleteCrmLead, addActivity, deleteActivity } from '../api/crmLeads';
+import { getCrmLeads, getCrmLead, deleteCrmLead, addActivity, deleteActivity, convertCrmLead } from '../api/crmLeads';
 import { LEAD_STATUSES } from '../types/crmLead';
 import CrmLeadForm from '../components/CrmLeadForm';
 
@@ -186,6 +186,12 @@ export default function CrmPage() {
     catch (e: unknown) { alert(e instanceof Error ? e.message : 'Delete failed'); }
   }
 
+  async function handleConvert(id: number) {
+    if (!confirm('Convert this lead to a Customer?')) return;
+    try { await convertCrmLead(id); load(); }
+    catch (e: unknown) { alert(e instanceof Error ? e.message : 'Convert failed'); }
+  }
+
   function applyFilters() {
     const f = { ...pendingFilters };
     setAppliedFilters(f);
@@ -334,6 +340,13 @@ export default function CrmPage() {
                     <button title="Delete" className="text-red-400 hover:text-red-600" onClick={() => handleDelete(l.id)}>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
+                    {l.converted_to_customer_id ? (
+                      <span title="Converted to Customer" className="text-green-600 text-xs font-medium whitespace-nowrap">Converted</span>
+                    ) : (
+                      <button title="Convert to Customer" className="text-green-500 hover:text-green-700" onClick={() => handleConvert(l.id)}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

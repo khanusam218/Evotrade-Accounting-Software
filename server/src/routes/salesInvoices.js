@@ -1,14 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { round2 } = require('../utils');
+const { round2, getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
-  const { rows: nsRows } = await client.query(
-    `SELECT prefix, next_number, padding FROM number_series WHERE name='Sales Invoices' FOR UPDATE`
-  );
-  if (!nsRows.length) throw new Error('Sales Invoice number series not configured');
-  const { prefix, next_number, padding } = nsRows[0];
+  const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Sales Invoices', 'SI-', 6);
   const { rows: maxRows } = await client.query(
     `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(number,'[^0-9]','','g') AS INTEGER)),0) AS max_num
      FROM sales_invoices WHERE number ~ '^SI-[0-9]+$'`
@@ -34,7 +31,7 @@ async function saveLines(client, invoiceId, lines) {
   }
 }
 
-function calcTotals(lines, discPct = 0, shippingCharges = 0) {
+function calcTotals(lines, discPct = 0, shippingCharges = 0, roundOff = 0) {
   const gross = round2(lines.reduce((s, l) => {
     const qty = Number(l.quantity || 1);
     const price = Number(l.unit_price || 0);
@@ -44,13 +41,15 @@ function calcTotals(lines, discPct = 0, shippingCharges = 0) {
   const taxAmount = round2(lines.reduce((s, l) => s + Number(l.tax_amount || 0), 0));
   const discAmount = round2(gross * Number(discPct || 0) / 100);
   const shipping = round2(Number(shippingCharges || 0));
+  const roundOffAmt = round2(Number(roundOff || 0));
   return {
     gross_amount: gross,
     tax_amount: taxAmount,
     discount_pct: Number(discPct || 0),
     discount: discAmount,
     shipping_charges: shipping,
-    net_amount: round2(gross - discAmount + taxAmount + shipping),
+    round_off: roundOffAmt,
+    net_amount: round2(gross - discAmount + taxAmount + shipping + roundOffAmt),
   };
 }
 
@@ -125,21 +124,21 @@ router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { customer_id, date, due_date, order_id, quotation_id, reference, subject, notes, discount_pct, shipping_charges, shipping_address, lines = [] } = req.body;
+    const { customer_id, date, due_date, order_id, quotation_id, reference, subject, notes, discount_pct, shipping_charges, round_off, shipping_address, lines = [] } = req.body;
     if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
     if (!lines.length) return res.status(400).json({ error: 'At least one line is required' });
-    const totals = calcTotals(lines, discount_pct, shipping_charges);
+    const totals = calcTotals(lines, discount_pct, shipping_charges, round_off);
     const number = await nextNumber(client);
     const { rows } = await client.query(
       `INSERT INTO sales_invoices
          (number, date, due_date, customer_id, order_id, reference, subject, notes, shipping_address,
-          gross_amount, tax_amount, discount_pct, discount, shipping_charges, net_amount,
+          gross_amount, tax_amount, discount_pct, discount, shipping_charges, round_off, net_amount,
           paid_amount, balance_amount, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,0,$15,'draft') RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,0,$16,'draft') RETURNING *`,
       [number, date, due_date || null, customer_id, order_id || null, reference || null,
        subject || null, notes || null, shipping_address || null,
        totals.gross_amount, totals.tax_amount, totals.discount_pct, totals.discount,
-       totals.shipping_charges, totals.net_amount]
+       totals.shipping_charges, totals.round_off, totals.net_amount]
     );
     if (quotation_id && !order_id) {
       await client.query(`UPDATE sales_quotations SET status='converted' WHERE id=$1`, [quotation_id]);
@@ -161,20 +160,20 @@ router.put('/:id', async (req, res) => {
     const { rows: existing } = await client.query('SELECT * FROM sales_invoices WHERE id=$1', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
     if (existing[0].status !== 'draft') return res.status(400).json({ error: 'Only draft invoices can be edited' });
-    const { customer_id, date, due_date, order_id, reference, subject, notes, discount_pct, shipping_charges, shipping_address, lines = [] } = req.body;
+    const { customer_id, date, due_date, order_id, reference, subject, notes, discount_pct, shipping_charges, round_off, shipping_address, lines = [] } = req.body;
     if (!lines.length) return res.status(400).json({ error: 'At least one line is required' });
-    const totals = calcTotals(lines, discount_pct, shipping_charges);
+    const totals = calcTotals(lines, discount_pct, shipping_charges, round_off);
     const { rows } = await client.query(
       `UPDATE sales_invoices SET
          customer_id=$1, date=$2, due_date=$3, order_id=$4, reference=$5, subject=$6, notes=$7,
          shipping_address=$8,
          gross_amount=$9, tax_amount=$10, discount_pct=$11, discount=$12,
-         shipping_charges=$13, net_amount=$14, balance_amount=$14
-       WHERE id=$15 RETURNING *`,
+         shipping_charges=$13, round_off=$14, net_amount=$15, balance_amount=$15
+       WHERE id=$16 RETURNING *`,
       [customer_id, date, due_date || null, order_id || null, reference || null,
        subject || null, notes || null, shipping_address || null,
        totals.gross_amount, totals.tax_amount, totals.discount_pct, totals.discount,
-       totals.shipping_charges, totals.net_amount, req.params.id]
+       totals.shipping_charges, totals.round_off, totals.net_amount, req.params.id]
     );
     await saveLines(client, req.params.id, lines);
     await client.query('COMMIT');
@@ -197,13 +196,13 @@ router.post('/:id/approve', async (req, res) => {
     const net = Number(inv.net_amount);
 
     const { rows: arRows } = await client.query(
-      `SELECT coa.* FROM chart_of_accounts coa WHERE coa.system_name = 'accounts_receivable' LIMIT 1`
+      `SELECT coa.* FROM chart_of_accounts coa WHERE coa.system_name = 'AccountsReceivable' LIMIT 1`
     );
     if (!arRows.length) return res.status(400).json({ error: 'Accounts Receivable account not found' });
     const arCoa = arRows[0];
 
     const { rows: revRows } = await client.query(
-      `SELECT * FROM chart_of_accounts WHERE account_type = 'revenue' AND parent_id IS NOT NULL LIMIT 1`
+      `SELECT * FROM chart_of_accounts WHERE system_name = 'DefaultSales' LIMIT 1`
     );
     if (!revRows.length) return res.status(400).json({ error: 'No revenue account found' });
     const revCoa = revRows[0];
@@ -213,6 +212,15 @@ router.post('/:id/approve', async (req, res) => {
 
     await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [arChange,  arCoa.id]);
     await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [revChange, revCoa.id]);
+
+    await postJournalEntry(client, {
+      date: inv.date, memo: `Sales Invoice ${inv.number}`, reference: inv.number,
+      source_type: 'SalesInvoice', source_id: inv.id,
+      lines: [
+        changeToLine(arCoa,  arChange,  `Sales Invoice ${inv.number}`),
+        changeToLine(revCoa, revChange, `Sales Invoice ${inv.number}`),
+      ],
+    });
 
     const { rows: updated } = await client.query(
       `UPDATE sales_invoices SET status='approved' WHERE id=$1 RETURNING *`, [req.params.id]
@@ -241,10 +249,10 @@ router.post('/:id/cancel', async (req, res) => {
     if (inv.status === 'approved') {
       const net = Number(inv.net_amount);
       const { rows: arRows } = await client.query(
-        `SELECT * FROM chart_of_accounts WHERE system_name = 'accounts_receivable' LIMIT 1`
+        `SELECT * FROM chart_of_accounts WHERE system_name = 'AccountsReceivable' LIMIT 1`
       );
       const { rows: revRows } = await client.query(
-        `SELECT * FROM chart_of_accounts WHERE account_type = 'revenue' AND parent_id IS NOT NULL LIMIT 1`
+        `SELECT * FROM chart_of_accounts WHERE system_name = 'DefaultSales' LIMIT 1`
       );
       if (arRows.length && revRows.length) {
         const arChange  = arRows[0].normal_balance  === 'debit'  ? -net :  net;
@@ -252,6 +260,10 @@ router.post('/:id/cancel', async (req, res) => {
         await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [arChange,  arRows[0].id]);
         await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [revChange, revRows[0].id]);
       }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'SalesInvoice', source_id: inv.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Sales Invoice ${inv.number}`,
+      });
       if (inv.order_id) {
         await client.query(`UPDATE sales_orders SET status='delivered' WHERE id=$1 AND status='invoiced'`, [inv.order_id]);
       }

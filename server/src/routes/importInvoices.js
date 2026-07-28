@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'II-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='II-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
@@ -44,6 +46,7 @@ async function saveLines(client, id, lines, expenses) {
 // GET /next-number
 router.get('/next-number', async (req, res) => {
   try {
+    await getOrCreateSeriesByPrefix(pool, 'II-', 6);
     const { rows } = await pool.query(
       "SELECT 'II-' || LPAD(GREATEST(next_number, COALESCE((SELECT MAX(CAST(SUBSTRING(number FROM 4) AS INTEGER))+1 FROM import_invoices WHERE number ~ '^II-[0-9]+$'),0))::text, padding::int, '0') AS number FROM number_series WHERE prefix='II-'"
     );
@@ -126,16 +129,6 @@ router.post('/:id/approve', async (req, res) => {
       "UPDATE import_invoices SET status='approved' WHERE id=$1 AND status='draft' RETURNING *", [req.params.id]
     );
     if (!rows.length) return res.status(400).json({ error: 'Not found or not draft' });
-    const inv = rows[0];
-    const { rows: apRows } = await client.query(
-      "SELECT id FROM chart_of_accounts WHERE system_name='accounts_payable' AND is_parent=false LIMIT 1"
-    );
-    if (apRows.length) {
-      await client.query(
-        'INSERT INTO journal_entry_lines (journal_entry_id,account_id,debit,credit) VALUES (0,$1,0,$2) ON CONFLICT DO NOTHING',
-        [apRows[0].id, inv.total_landed_cost]
-      );
-    }
     await client.query('COMMIT');
     res.json(rows[0]);
   } catch (e) { await client.query('ROLLBACK'); res.status(400).json({ error: e.message }); }

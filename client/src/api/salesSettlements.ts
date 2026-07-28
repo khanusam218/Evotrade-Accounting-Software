@@ -21,49 +21,42 @@ export async function getReceivedPayments(customerId: number): Promise<{
 export async function getSalesSettlements(params?: Record<string, string>): Promise<SalesSettlement[]> {
   const q = params ? '?' + new URLSearchParams(params).toString() : '';
   const r = await apiFetch(BASE + q);
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement[]>;
 }
 
 export async function getSalesSettlement(id: number): Promise<SalesSettlement> {
   const r = await apiFetch(`${BASE}/${id}`);
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement>;
 }
 
 export async function getOpenInvoices(customerId: number): Promise<SalesSettlementLine[]> {
   const r = await apiFetch(`${BASE}/open-invoices/${customerId}`);
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlementLine[]>;
 }
 
 export async function createSalesSettlement(data: Partial<SalesSettlement>): Promise<SalesSettlement> {
   const r = await apiFetch(BASE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement>;
 }
 
 export async function updateSalesSettlement(id: number, data: Partial<SalesSettlement>): Promise<SalesSettlement> {
   const r = await apiFetch(`${BASE}/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement>;
 }
 
 export async function approveSalesSettlement(id: number): Promise<SalesSettlement> {
   const r = await apiFetch(`${BASE}/${id}/approve`, { method: 'POST' });
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement>;
 }
 
 export async function cancelSalesSettlement(id: number): Promise<SalesSettlement> {
   const r = await apiFetch(`${BASE}/${id}/cancel`, { method: 'POST' });
-  if (!r.ok) throw new Error((await r.json()).error);
-  return r.json();
+  return parseJsonOrThrow(r) as Promise<SalesSettlement>;
 }
 
 export async function deleteSalesSettlement(id: number): Promise<void> {
   const r = await apiFetch(`${BASE}/${id}`, { method: 'DELETE' });
-  if (!r.ok) throw new Error((await r.json()).error);
+  if (!r.ok) await parseJsonOrThrow(r);
 }
 
 

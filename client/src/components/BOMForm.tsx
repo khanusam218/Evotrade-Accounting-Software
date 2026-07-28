@@ -2,9 +2,18 @@
 import { useEffect, useState } from 'react';
 import type { BillOfMaterials, BomComponent } from '../types/billOfMaterials';
 import { createBOM, updateBOM, getBOM } from '../api/billsOfMaterials';
+import { validateName, validatePositive } from '../utils/validators';
 
 interface Product { id: number; name: string; }
 interface Props   { bom: BillOfMaterials | null; onClose: () => void; onSaved: () => void; }
+
+interface FieldErrors {
+  productId?: string;
+  name?: string;
+  outputQty?: string;
+  components?: string;
+}
+type CompErrors = Partial<Record<'quantity', string>>;
 
 const emptyComp = (): BomComponent => ({ component_product_id: null, quantity: 1, notes: null });
 
@@ -18,6 +27,8 @@ export default function BOMForm({ bom, onClose, onSaved }: Props) {
   const [components, setComponents] = useState<BomComponent[]>([emptyComp()]);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const [errors,     setErrors]     = useState<FieldErrors>({});
+  const [compErrors, setCompErrors] = useState<CompErrors[]>([]);
 
   useEffect(() => { apiFetch('/api/products?limit=500').then(r => r.json()).then(d => setProducts(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []))); }, []);
 
@@ -32,11 +43,34 @@ export default function BOMForm({ bom, onClose, onSaved }: Props) {
 
   function updComp(i: number, patch: Partial<BomComponent>) {
     setComponents(prev => prev.map((c, idx) => idx !== i ? c : { ...c, ...patch }));
+    setCompErrors(prev => prev.map((ce, idx) => idx !== i ? ce : {}));
+  }
+
+  function validate(): boolean {
+    const e: FieldErrors = {};
+    if (!productId) e.productId = 'Output product is required.';
+    const nameErr = validateName(name, 'BOM name'); if (nameErr) e.name = nameErr;
+    const qtyErr = validatePositive(outputQty, 'Output quantity'); if (qtyErr) e.outputQty = qtyErr;
+
+    const selectedComps = components.filter(c => c.component_product_id);
+    if (selectedComps.length === 0) e.components = 'At least one component is required.';
+
+    const ce: CompErrors[] = components.map(c => {
+      if (!c.component_product_id) return {};
+      const compErr: CompErrors = {};
+      const qErr = validatePositive(c.quantity, 'Quantity'); if (qErr) compErr.quantity = qErr;
+      return compErr;
+    });
+    if (ce.some(x => Object.keys(x).length > 0)) e.components = e.components || 'Please fix the errors in the components.';
+
+    setErrors(e);
+    setCompErrors(ce);
+    return Object.keys(e).length === 0;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError('');
-    if (!productId) { setError('Output product is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = { product_id: Number(productId), name, output_qty: outputQty, notes: notes || null, is_active: isActive, components: components.filter(c => c.component_product_id) };
@@ -59,11 +93,19 @@ export default function BOMForm({ bom, onClose, onSaved }: Props) {
             {error && <div className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Output Product *</label>
-                <select className="input" value={productId} onChange={e => setProductId(e.target.value)} required>
+                <select className={`input ${errors.productId ? 'border-red-500' : ''}`} value={productId} onChange={e => { setProductId(e.target.value); setErrors(prev => ({ ...prev, productId: undefined })); }} required>
                   <option value="">Select product…</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select></div>
-              <div><label className="label">BOM Name *</label><input className="input" value={name} onChange={e => setName(e.target.value)} required /></div>
-              <div><label className="label">Output Quantity</label><input type="number" min="0.0001" step="any" className="input" value={outputQty} onChange={e => setOutputQty(Number(e.target.value))} /></div>
+                </select>
+                {errors.productId && <p className="text-xs text-red-500 mt-1">{errors.productId}</p>}
+              </div>
+              <div><label className="label">BOM Name *</label>
+                <input className={`input ${errors.name ? 'border-red-500' : ''}`} value={name} onChange={e => { setName(e.target.value); setErrors(prev => ({ ...prev, name: undefined })); }} required />
+                {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+              </div>
+              <div><label className="label">Output Quantity</label>
+                <input type="number" min="0.0001" step="any" className={`input ${errors.outputQty ? 'border-red-500' : ''}`} value={outputQty} onChange={e => { setOutputQty(Number(e.target.value)); setErrors(prev => ({ ...prev, outputQty: undefined })); }} />
+                {errors.outputQty && <p className="text-xs text-red-500 mt-1">{errors.outputQty}</p>}
+              </div>
               <div className="flex items-end gap-2">
                 <div className="flex items-center gap-2 mt-5">
                   <input type="checkbox" id="isActive" checked={isActive} onChange={e => setIsActive(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600" />
@@ -75,8 +117,9 @@ export default function BOMForm({ bom, onClose, onSaved }: Props) {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-gray-700">Components</h3>
-                <button type="button" onClick={() => setComponents(prev => [...prev, emptyComp()])} className="text-sm text-indigo-600 hover:underline">+ Add Component</button>
+                <button type="button" onClick={() => { setComponents(prev => [...prev, emptyComp()]); setCompErrors(prev => [...prev, {}]); }} className="text-sm text-indigo-600 hover:underline">+ Add Component</button>
               </div>
+              {errors.components && <p className="text-xs text-red-500 mb-2">{errors.components}</p>}
               <table className="w-full text-sm border-collapse">
                 <thead><tr className="bg-gray-50">
                   <th className="table-th">Component Product</th>
@@ -90,9 +133,12 @@ export default function BOMForm({ bom, onClose, onSaved }: Props) {
                       <td className="table-td"><select className="input py-1 text-xs" value={c.component_product_id ?? ''} onChange={e => updComp(i, { component_product_id: e.target.value ? Number(e.target.value) : null })}>
                         <option value="">Select…</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
-                      <td className="table-td"><input type="number" min="0.0001" step="any" className="input py-1 text-xs text-right" value={c.quantity} onChange={e => updComp(i, { quantity: Number(e.target.value) })} /></td>
+                      <td className="table-td">
+                        <input type="number" min="0.0001" step="any" className={`input py-1 text-xs text-right ${compErrors[i]?.quantity ? 'border-red-500' : ''}`} value={c.quantity} onChange={e => updComp(i, { quantity: Number(e.target.value) })} />
+                        {compErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{compErrors[i].quantity}</p>}
+                      </td>
                       <td className="table-td"><input className="input py-1 text-xs" value={c.notes ?? ''} onChange={e => updComp(i, { notes: e.target.value || null })} /></td>
-                      <td className="table-td text-center">{components.length > 1 && <button type="button" onClick={() => setComponents(prev => prev.filter((_,j) => j !== i))} className="text-red-400 hover:text-red-600">&times;</button>}</td>
+                      <td className="table-td text-center">{components.length > 1 && <button type="button" onClick={() => { setComponents(prev => prev.filter((_,j) => j !== i)); setCompErrors(prev => prev.filter((_,j) => j !== i)); }} className="text-red-400 hover:text-red-600">&times;</button>}</td>
                     </tr>
                   ))}
                 </tbody>

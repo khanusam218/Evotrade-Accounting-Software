@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextCode(client) {
+  await getOrCreateSeriesByPrefix(client, 'OC-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='OC-' RETURNING lpad(next_number::text,padding::int,'0')"
   );

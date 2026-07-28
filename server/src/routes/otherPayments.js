@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateOPNumber(client) {
+  await getOrCreateSeries(client, 'Other Payments', 'OP-', 6);
   const { rows } = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
       WHERE name = 'Other Payments'
@@ -163,9 +166,11 @@ router.post('/:id/approve', async (req, res, next) => {
     if (!adjs.length) return res.status(400).json({ error: 'No account adjustments found' });
 
     // Debit each adjustment account (money goes out)
+    const jeLines = [];
     for (const adj of adjs) {
       const change = adj.normal_balance === 'debit' ? adj.amount : -adj.amount;
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [change, adj.account_id]);
+      jeLines.push(changeToLine({ id: adj.account_id, normal_balance: adj.normal_balance }, change, `Other Payment ${op.number}`));
     }
 
     // Credit the bank account (asset decreases)
@@ -175,6 +180,12 @@ router.post('/:id/approve', async (req, res, next) => {
     );
     const bankChange = bankCoa.normal_balance === 'debit' ? -parseFloat(op.total_amount) : parseFloat(op.total_amount);
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [bankChange, bankCoa.id]);
+    jeLines.push(changeToLine(bankCoa, bankChange, `Other Payment ${op.number}`));
+
+    await postJournalEntry(client, {
+      date: op.date, memo: `Other Payment ${op.number}`, reference: op.number,
+      source_type: 'OtherPayment', source_id: op.id, lines: jeLines,
+    });
 
     await client.query(`UPDATE other_payments SET status='approved' WHERE id=$1`, [op.id]);
     await client.query('COMMIT');
@@ -209,6 +220,11 @@ router.post('/:id/cancel', async (req, res, next) => {
       );
       const bankChange = bankCoa.normal_balance === 'debit' ? -parseFloat(op.total_amount) : parseFloat(op.total_amount);
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [bankChange, bankCoa.id]);
+
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'OtherPayment', source_id: op.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Other Payment ${op.number}`,
+      });
     }
 
     await client.query(`UPDATE other_payments SET status='cancelled' WHERE id=$1`, [op.id]);

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RecurringInvoice, RecurringInvoiceLine, RIFrequency, RIStatus } from '../types/recurringInvoice';
 import { createRecurringInvoice, updateRecurringInvoice, getRecurringInvoice } from '../api/recurringInvoices';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Customer { id: number; print_name: string; }
 interface Product  { id: number; name: string; sale_price: number; sale_tax_id: number | null; }
@@ -61,6 +62,8 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
   const fileRef              = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [lineErrors, setLineErrors] = useState<Record<number, Partial<Record<'quantity' | 'unit_price' | 'discount_pct', string>>>>({});
 
   // Outside-click closes customer dropdown
   useEffect(() => {
@@ -96,7 +99,9 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
       }
       setReference(full.reference ?? '');
       setNotes(full.notes ?? '');
-      setDiscount(String(full.discount ?? 0));
+      setDiscount(String(full.discount_pct ?? 0));
+      setShippingChgs(String(full.shipping_charges ?? 0));
+      setRoundOff(String(full.round_off ?? 0));
       setLines(full.lines?.length ? full.lines : [emptyLine()]);
     });
   }, [ri]);
@@ -135,11 +140,39 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!customerId)     e.customerId = 'Customer is required.';
+    if (!frequency)      e.frequency = 'Frequency is required.';
+    if (!startDate)      e.startDate = 'Start Date is required.';
+    if (!invoiceStatus)  e.invoiceStatus = 'Invoice Status is required.';
+    if (!date)           e.date = 'Date is required.';
+    if (!dueDate)        e.dueDate = 'Due Date is required.';
+    if (startDate && endDate && endDate < startDate) e.endDate = 'End Date cannot be before Start Date.';
+    if (date && dueDate && dueDate < date) e.dueDate = e.dueDate || 'Due Date cannot be before the invoice Date.';
+
+    const discErr = validatePercent(disc, 'Discount'); if (discErr) e.discount = discErr;
+    const shipErr = validatePositive(shipping, 'Shipping charges'); if (shipErr) e.shippingChgs = shipErr;
+
+    const validLines = lines.filter(l => l.product_id);
+    if (validLines.length === 0) e.lines = 'At least one product line is required.';
+
+    const le: typeof lineErrors = {};
+    lines.forEach((l, i) => {
+      const li: Partial<Record<'quantity' | 'unit_price' | 'discount_pct', string>> = {};
+      const qErr = validatePositive(l.quantity, 'Quantity'); if (qErr) li.quantity = qErr;
+      const pErr = validatePositive(l.unit_price, 'Unit price'); if (pErr) li.unit_price = pErr;
+      const dErr = validatePercent(l.discount_pct, 'Discount'); if (dErr) li.discount_pct = dErr;
+      if (Object.keys(li).length) le[i] = li;
+    });
+    setLineErrors(le);
+    setErrors(e);
+    return Object.keys(e).length === 0 && Object.keys(le).length === 0;
+  }
+
   async function handleSave() {
     setError('');
-    if (!customerId) { setError('Customer is required'); return; }
-    if (!frequency)  { setError('Frequency is required'); return; }
-    if (!startDate)  { setError('Start Date is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const dueDays = dueDate && date
@@ -154,7 +187,9 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
         start_date:   startDate,
         end_date:     endDate || null,
         due_days:     dueDays,
-        discount:     disc,
+        discount_pct: disc,
+        shipping_charges: shipping,
+        round_off:    roundOff_,
         lines: lines.filter(l => l.product_id).map(l => ({ ...l, amount: lineAmount(l) })),
       };
       if (ri) await updateRecurringInvoice(ri.id, payload);
@@ -202,19 +237,20 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Frequency <span className="text-red-500">*</span></label>
                 <select
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+                  className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${errors.frequency ? 'border-red-500' : 'border-gray-300'}`}
                   value={frequency}
                   onChange={e => setFrequency(e.target.value as RIFrequency | '')}
                 >
                   <option value="">-Choose-</option>
                   {FREQUENCIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
+                {errors.frequency && <p className="text-xs text-red-500 mt-1">{errors.frequency}</p>}
               </div>
 
               {/* Start Date */}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Start Date <span className="text-red-500">*</span></label>
-                <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                <div className={`flex items-center border rounded overflow-hidden ${errors.startDate ? 'border-red-500' : 'border-gray-300'}`}>
                   <input
                     type="date"
                     className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0"
@@ -226,12 +262,13 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                   )}
                   <span className="px-2 text-gray-400"><CalIcon /></span>
                 </div>
+                {errors.startDate && <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>}
               </div>
 
               {/* End Date */}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">End Date</label>
-                <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                <div className={`flex items-center border rounded overflow-hidden ${errors.endDate ? 'border-red-500' : 'border-gray-300'}`}>
                   <input
                     type="date"
                     className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0"
@@ -240,13 +277,14 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                   />
                   <span className="px-2 text-gray-400"><CalIcon /></span>
                 </div>
+                {errors.endDate && <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>}
               </div>
 
               {/* Invoice Status */}
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Invoice Status <span className="text-red-500">*</span></label>
                 <select
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+                  className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${errors.invoiceStatus ? 'border-red-500' : 'border-gray-300'}`}
                   value={invoiceStatus}
                   onChange={e => setInvoiceStatus(e.target.value as RIStatus | '')}
                 >
@@ -256,6 +294,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                   <option value="cancelled">Cancelled</option>
                   <option value="completed">Completed</option>
                 </select>
+                {errors.invoiceStatus && <p className="text-xs text-red-500 mt-1">{errors.invoiceStatus}</p>}
               </div>
             </div>
           </div>
@@ -268,7 +307,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
               <label className="block text-xs text-gray-500 mb-1">Customer <span className="text-red-500">*</span></label>
               <input
                 type="text"
-                className="w-full border-2 border-red-400 rounded px-2 py-1.5 text-sm focus:outline-none"
+                className={`w-full border-2 rounded px-2 py-1.5 text-sm focus:outline-none ${errors.customerId ? 'border-red-500' : 'border-red-400'}`}
                 placeholder="Search customer..."
                 value={customerSearch}
                 onChange={e => { setCustomerSearch(e.target.value); setShowCustDrop(true); setCustomerId(''); }}
@@ -291,6 +330,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                   ))}
                 </div>
               )}
+              {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
             </div>
 
             {/* Number */}
@@ -315,7 +355,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
             {/* Date */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-500">*</span></label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${errors.date ? 'border-red-500' : 'border-gray-300'}`}>
                 <input
                   type="date"
                   className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0"
@@ -327,12 +367,13 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                 )}
                 <span className="px-2 text-gray-400"><CalIcon /></span>
               </div>
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
 
             {/* Due Date */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Due Date <span className="text-red-500">*</span></label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${errors.dueDate ? 'border-red-500' : 'border-gray-300'}`}>
                 <input
                   type="date"
                   className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0"
@@ -344,6 +385,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                 )}
                 <span className="px-2 text-gray-400"><CalIcon /></span>
               </div>
+              {errors.dueDate && <p className="text-xs text-red-500 mt-1">{errors.dueDate}</p>}
             </div>
 
             {/* Reference */}
@@ -387,24 +429,26 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                     <td className="px-3 py-1.5">
                       <input
                         type="number" min="0" step="any"
-                        className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none"
+                        className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-200'}`}
                         value={l.quantity}
                         onChange={e => updateLine(i, { quantity: Number(e.target.value) })}
                       />
+                      {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>
                     <td className="px-3 py-1.5">
                       <input
                         type="number" min="0" step="any"
-                        className="w-full border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none"
+                        className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.unit_price ? 'border-red-500' : 'border-gray-200'}`}
                         value={l.unit_price}
                         onChange={e => updateLine(i, { unit_price: Number(e.target.value) })}
                       />
+                      {lineErrors[i]?.unit_price && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].unit_price}</p>}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1">
                         <input
                           type="number" min="0" max="100" step="any"
-                          className="flex-1 border border-gray-200 rounded px-2 py-1 text-sm text-right focus:outline-none min-w-0"
+                          className={`flex-1 border rounded px-2 py-1 text-sm text-right focus:outline-none min-w-0 ${lineErrors[i]?.discount_pct ? 'border-red-500' : 'border-gray-200'}`}
                           value={l.discount_pct}
                           onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })}
                         />
@@ -412,6 +456,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                           %<svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                         </button>
                       </div>
+                      {lineErrors[i]?.discount_pct && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].discount_pct}</p>}
                     </td>
                     <td className="px-3 py-1.5 text-right text-sm text-gray-700">{lineAmount(l).toFixed(2)}</td>
                     <td className="px-3 py-1.5">
@@ -436,6 +481,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                 ))}
               </tbody>
             </table>
+            {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
           </div>
 
           {/* Comments + Summary */}
@@ -459,7 +505,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                 <div className="flex items-center gap-1">
                   <input
                     type="number" min="0" max="100" step="any"
-                    className="w-16 border border-gray-200 rounded px-2 py-0.5 text-sm text-right focus:outline-none"
+                    className={`w-16 border rounded px-2 py-0.5 text-sm text-right focus:outline-none ${errors.discount ? 'border-red-500' : 'border-gray-200'}`}
                     value={discount}
                     onChange={e => setDiscount(e.target.value)}
                   />
@@ -471,6 +517,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                   />
                 </div>
               </div>
+              {errors.discount && <p className="text-xs text-red-500 text-right -mt-1 mb-1">{errors.discount}</p>}
               <div className="flex justify-between items-center py-2 border-b border-gray-100">
                 <span className="text-gray-500">Tax</span>
                 <span className="font-medium">{taxTotal.toFixed(2)}</span>
@@ -479,11 +526,12 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                 <span className="text-gray-500 whitespace-nowrap">Shipping Charges</span>
                 <input
                   type="number" min="0" step="any"
-                  className="w-24 border border-gray-200 rounded px-2 py-0.5 text-sm text-right focus:outline-none"
+                  className={`w-24 border rounded px-2 py-0.5 text-sm text-right focus:outline-none ${errors.shippingChgs ? 'border-red-500' : 'border-gray-200'}`}
                   value={shippingChgs}
                   onChange={e => setShippingChgs(e.target.value)}
                 />
               </div>
+              {errors.shippingChgs && <p className="text-xs text-red-500 text-right -mt-1 mb-1">{errors.shippingChgs}</p>}
               <div className="flex justify-between items-center py-2 border-b border-gray-100 gap-2">
                 <span className="text-gray-500 whitespace-nowrap">Round Off</span>
                 <input

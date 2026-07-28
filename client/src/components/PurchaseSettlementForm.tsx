@@ -23,9 +23,9 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
   const [notes,        setNotes]        = useState('');
   const [autoSettle,   setAutoSettle]   = useState(true);
   const [lines,        setLines]        = useState<PurchaseSettlementLine[]>([]);
-  const [allocations,  setAllocations]  = useState<Record<string, string>>({});
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
+  const [errors,       setErrors]       = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiFetch('/api/vendors?limit=500').then(r => r.json()).then(d => setVendors(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])));
@@ -68,12 +68,36 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
 
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  function updateInvoiceAmount(invoiceId: number, amount: number) {
+    setLines(prev => prev.map(l => l.invoice_id === invoiceId ? { ...l, amount: isNaN(amount) ? 0 : amount } : l));
+  }
+
+  function toggleInvoice(invoiceId: number, checked: boolean, balance: number) {
+    setLines(prev => prev.map(l => l.invoice_id === invoiceId ? { ...l, amount: checked ? balance : 0 } : l));
+  }
+
+  function toggleAllInvoices(checked: boolean) {
+    setLines(prev => prev.map(l => ({ ...l, amount: checked ? Number(l.invoice_balance || 0) : 0 })));
+  }
+
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!accountId) e.account = 'Settlement account is required.';
+    if (!date) e.date = 'Date is required.';
+    const activeLines = lines.filter(l => Number(l.amount) > 0 || l.write_off);
+    if (!activeLines.length) e.lines = 'At least one invoice must have an amount.';
+    else if (activeLines.some(l => Number(l.amount) > Number(l.invoice_balance || 0))) {
+      e.lines = 'Allocated amount cannot exceed an invoice\'s balance.';
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave(e: React.FormEvent, continueEdit = false) {
     e.preventDefault(); setError('');
-    if (!vendorId)  { setError('Vendor is required'); return; }
-    if (!accountId) { setError('Settlement account is required'); return; }
+    if (!validate()) return;
     const activeLines = lines.filter(l => Number(l.amount) > 0 || l.write_off);
-    if (!activeLines.length) { setError('At least one invoice must have an amount'); return; }
     setSaving(true);
     try {
       const payload = {
@@ -90,13 +114,18 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
     finally { setSaving(false); }
   }
 
-  const settlementTable = (rows: { key: string; number: string; date: string; due_date: string | null; total: number; adjusted: number; balance: number; allocateKey: string }[]) => (
+  type SettlementRow = { key: string; invoiceId?: number; number: string; date: string; due_date: string | null; total: number; adjusted: number; balance: number; allocateKey: string };
+
+  const settlementTable = (rows: SettlementRow[], editable = false) => (
     <div className="overflow-x-auto border border-gray-200 rounded">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-200">
             <th className="px-3 py-2 w-10">
-              <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+              <input type="checkbox" disabled={!editable}
+                className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 disabled:opacity-40"
+                checked={editable && rows.length > 0 && rows.every(r => Number(lines.find(l => l.invoice_id === r.invoiceId)?.amount || 0) > 0)}
+                onChange={e => editable && toggleAllInvoices(e.target.checked)} />
             </th>
             <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Description</th>
             <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Date</th>
@@ -110,10 +139,15 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
         <tbody>
           {rows.length === 0 ? (
             <tr><td colSpan={8} className="px-4 py-6 text-sm text-amber-500 font-medium">No record found</td></tr>
-          ) : rows.map(row => (
+          ) : rows.map(row => {
+            const lineAmount = editable ? Number(lines.find(l => l.invoice_id === row.invoiceId)?.amount || 0) : 0;
+            return (
             <tr key={row.key} className="border-b border-gray-100 hover:bg-gray-50">
               <td className="px-3 py-2">
-                <input type="checkbox" className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
+                <input type="checkbox" disabled={!editable}
+                  className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 disabled:opacity-40"
+                  checked={editable && lineAmount > 0}
+                  onChange={e => editable && row.invoiceId !== undefined && toggleInvoice(row.invoiceId, e.target.checked, row.balance)} />
               </td>
               <td className="px-3 py-2 text-gray-800 font-medium">{row.number}</td>
               <td className="px-3 py-2 text-center text-gray-600">{row.date?.slice(0, 10) ?? '-'}</td>
@@ -122,21 +156,21 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
               <td className="px-3 py-2 text-right font-mono text-gray-800">{fmt(row.adjusted)}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-800">{fmt(row.balance)}</td>
               <td className="px-3 py-2 text-right">
-                <input type="number" min="0" step="any"
-                  className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
-                  value={allocations[row.allocateKey] ?? ''}
-                  onChange={e => setAllocations(prev => ({ ...prev, [row.allocateKey]: e.target.value }))}
+                <input type="number" min="0" step="any" disabled={!editable}
+                  className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 disabled:bg-gray-100"
+                  value={editable ? (lineAmount || '') : ''}
+                  onChange={e => row.invoiceId !== undefined && updateInvoiceAmount(row.invoiceId, e.target.value === '' ? 0 : Number(e.target.value))}
                   placeholder="0.00" />
               </td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
     </div>
   );
 
   const payableRows = openInvs.map(inv => ({
-    key: `inv-${inv.id}`, number: inv.number, date: inv.date, due_date: inv.due_date,
+    key: `inv-${inv.id}`, invoiceId: inv.id, number: inv.number, date: inv.date, due_date: inv.due_date,
     total: Number(inv.net_amount || 0), adjusted: Number(inv.paid_amount || 0),
     balance: Number(inv.balance_amount || 0), allocateKey: `inv-${inv.id}`,
   }));
@@ -166,11 +200,12 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
-                <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <select className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.vendor ? 'border-red-500' : 'border-gray-300'}`}
                   value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Type to search vendor</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                 </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -187,8 +222,9 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
             </div>
 
@@ -196,11 +232,12 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Settlement Account <span className="text-red-500">*</span></label>
-                <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <select className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.account ? 'border-red-500' : 'border-gray-300'}`}
                   value={accountId} onChange={e => setAccountId(e.target.value)} required>
                   <option value="">Select account…</option>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
+                {errors.account && <p className="text-xs text-red-500 mt-1">{errors.account}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
@@ -221,7 +258,8 @@ export default function PurchaseSettlementForm({ settlement, onClose, onSaved }:
             {/* Payables Table */}
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">Payables</h3>
-              {settlementTable(payableRows)}
+              {settlementTable(payableRows, true)}
+              {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
             </div>
 
             {/* Paid Table */}

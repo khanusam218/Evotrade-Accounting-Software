@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'SD-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='SD-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
@@ -22,6 +24,7 @@ async function saveLines(client, id, lines) {
 // GET /next-number
 router.get('/next-number', async (req, res) => {
   try {
+    await getOrCreateSeriesByPrefix(pool, 'SD-', 6);
     const { rows } = await pool.query(
       `SELECT 'SD-' || LPAD(GREATEST(
          next_number,

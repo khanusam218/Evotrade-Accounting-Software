@@ -241,9 +241,11 @@ export default function CustomersPage() {
 
   if (showForm) return (
         <CustomerForm
+      key={editTarget ? editTarget.id : 'new'}
       customer={editTarget}
       onClose={() => { setShowForm(false); setEditTarget(null); }}
       onSaved={handleFormSaved}
+      onSavedAndNew={() => setEditTarget(null)}
     />
   );
 

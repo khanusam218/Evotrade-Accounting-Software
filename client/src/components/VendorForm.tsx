@@ -1,13 +1,16 @@
 ﻿import { useEffect, useRef, useState } from 'react';
 import type { Vendor, VendorCategory, VendorFormData } from '../types/vendor';
-import { createVendor, createVendorCategory, getVendorCategories, getNextVendorCode, updateVendor } from '../api/vendors';
-import { validateEmail, validatePhone, validateZip } from '../utils/validators';
+import { createVendor, getVendorCategories, getNextVendorCode, updateVendor } from '../api/vendors';
+import { validateEmail, validateName, validatePhone, validatePositive, validateZip } from '../utils/validators';
+import { PK_PROVINCES, PK_CITIES, COUNTRIES } from '../data/locations';
+import CustomFieldsTab from './CustomFieldsTab';
 
 interface Props {
   vendor: Vendor | null;
   onClose: () => void;
   onSaved: () => void;
   onRefresh?: () => void;
+  onSavedAndNew?: () => void;
 }
 
 type FormTab = 'general' | 'address' | 'custom';
@@ -24,6 +27,9 @@ const EMPTY: VendorFormData = {
   contact_person: '',
   address: '',
   is_active: true,
+  profile_image: null,
+  address_line1: '', address_line2: '',
+  city: '', state: '', zip: '', country: '',
 };
 
 function toFormData(v: Vendor): VendorFormData {
@@ -39,51 +45,17 @@ function toFormData(v: Vendor): VendorFormData {
     contact_person:    v.contact_person ?? '',
     address:           v.address        ?? '',
     is_active:         v.is_active,
+    profile_image:     v.profile_image  ?? null,
+    address_line1:     v.address_line1  ?? '',
+    address_line2:     v.address_line2  ?? '',
+    city:              v.city           ?? '',
+    state:             v.state          ?? '',
+    zip:               v.zip            ?? '',
+    country:           v.country        ?? '',
   };
 }
 
-function CustomFieldsCard() {
-  const [field,  setField]  = useState('');
-  const [adding, setAdding] = useState(false);
-  return (
-    <div className="border border-gray-200 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Fields</h3>
-      <div className="flex items-end gap-3">
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1">
-            Field <span className="text-red-500">*</span>
-          </label>
-          <select
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
-            value={field}
-            onChange={e => setField(e.target.value)}
-          >
-            <option value="">-Choose-</option>
-          </select>
-        </div>
-        {adding ? (
-          <div className="flex gap-2">
-            <button type="button"
-              className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-2 rounded transition-colors">
-              + ADD
-            </button>
-            <button type="button" onClick={() => setAdding(false)}
-              className="bg-red-100 hover:bg-red-200 text-red-600 text-xs font-medium px-3 py-2 rounded transition-colors">
-              × CANCEL
-            </button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setAdding(true)}
-            className="bg-green-500 hover:bg-green-600 text-white text-xs font-medium px-3 py-2 rounded transition-colors">
-            + ADD
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Props) {
+export default function VendorForm({ vendor, onClose, onSaved, onRefresh, onSavedAndNew }: Props) {
   const isEdit = vendor !== null;
 
   const [form,       setForm]       = useState<VendorFormData>(isEdit ? toFormData(vendor) : EMPTY);
@@ -95,18 +67,8 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // UI-only fields
-  const [printName,   setPrintName]   = useState('');
   const [displayName, setDisplayName] = useState('');
   const [phone3,      setPhone3]      = useState('');
-  const [imageUrl,    setImageUrl]    = useState('');
-
-  // Address tab
-  const [addrLine1, setAddrLine1] = useState('');
-  const [addrLine2, setAddrLine2] = useState('');
-  const [city,      setCity]      = useState('');
-  const [addrState, setAddrState] = useState('');
-  const [country,   setCountry]   = useState('');
-  const [zipCode,   setZipCode]   = useState('');
 
   // Searchable category
   const [catSearch, setCatSearch] = useState('');
@@ -134,6 +96,30 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
 
   function set<K extends keyof VendorFormData>(key: K, value: VendorFormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
+    setFieldErrors(prev => ({ ...prev, [key as string]: '' }));
+  }
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 300;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { set('profile_image', ev.target?.result as string); return; }
+        const scale = Math.max(size / img.width, size / img.height);
+        const dw = img.width * scale, dh = img.height * scale;
+        ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+        set('profile_image', canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(f);
   }
 
   const filteredCats = categories.filter(c =>
@@ -142,49 +128,43 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
 
   function resetForm() {
     setForm(EMPTY);
-    setPrintName(''); setDisplayName(''); setPhone3(''); setImageUrl('');
-    setAddrLine1(''); setAddrLine2(''); setCity(''); setAddrState('');
-    setCountry(''); setZipCode('');
+    setDisplayName(''); setPhone3('');
     setCatSearch(''); setTouched(false); setTab('general');
     getNextVendorCode().then(setNextCode).catch(() => {});
   }
 
   function validateVendorFields(): Record<string, string> {
     const errs: Record<string, string> = {};
+    const nameErr = validateName(form.print_name, 'Vendor name'); if (nameErr) errs.print_name = nameErr;
     const emailErr = validateEmail(form.email); if (emailErr) errs.email = emailErr;
     const p1 = validatePhone(form.phone_1); if (p1) errs.phone_1 = p1;
     const p2 = validatePhone(form.phone_2); if (p2) errs.phone_2 = p2;
     const p3 = validatePhone(phone3); if (p3) errs.phone3 = p3;
-    const zipErr = validateZip(zipCode); if (zipErr) errs.zipCode = zipErr;
+    const zipErr = validateZip(form.zip ?? ''); if (zipErr) errs.zip = zipErr;
+    const balErr = validatePositive(form.opening_balance, 'Opening balance'); if (balErr) errs.opening_balance = balErr;
+    const creditErr = validatePositive(form.credit_limit_days, 'Credit limit'); if (creditErr) errs.credit_limit_days = creditErr;
     return errs;
-  }
-
-  async function resolveCategoryId(): Promise<string> {
-    if (form.category_id) return form.category_id;
-    const typed = catSearch.trim();
-    if (!typed) return '';
-    const existing = categories.find(c => c.name.toLowerCase() === typed.toLowerCase());
-    if (existing) return String(existing.id);
-    const created = await createVendorCategory(typed);
-    setCategories(prev => [...prev, created]);
-    return String(created.id);
   }
 
   async function handleSave(andNew: boolean) {
     setTouched(true);
-    if (!form.print_name.trim()) return;
     const errs = validateVendorFields();
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) return;
     setSaving(true);
     try {
-      const category_id = await resolveCategoryId();
-      const payload = { ...form, category_id };
-      if (isEdit) await updateVendor(vendor.id, payload);
-      else        await createVendor(payload);
+      if (isEdit) await updateVendor(vendor.id, form);
+      else        await createVendor(form);
       if (andNew) {
         onRefresh?.();
-        resetForm();
+        // Editing: this instance still holds the record via the `vendor`
+        // prop, which can't be reset locally — hand back to the parent to
+        // swap in a fresh "add" instance instead of resetting in place
+        // (that left the code field showing the OLD vendor while every
+        // other field went blank, and a second save would have overwritten
+        // the original record with that blank data).
+        if (isEdit) onSavedAndNew?.();
+        else resetForm();
       } else {
         onSaved();
       }
@@ -197,7 +177,7 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
 
   const inputCls  = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500';
   const errCls    = 'w-full border border-red-400 rounded px-3 py-2 text-sm focus:outline-none focus:border-red-500';
-  const nameErr   = touched && !form.print_name.trim();
+  const nameErr   = touched && fieldErrors.print_name;
 
   const tabs: { key: FormTab; label: string }[] = [
     { key: 'general', label: 'General' },
@@ -274,15 +254,15 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
                       value={form.print_name}
                       onChange={e => set('print_name', e.target.value)}
                     />
-                    {nameErr && <p className="mt-1 text-xs text-red-600">Vendor name is required.</p>}
+                    {nameErr && <p className="mt-1 text-xs text-red-600">{fieldErrors.print_name}</p>}
                   </div>
                 </div>
 
                 {/* Profile image */}
                 <div className="flex flex-col items-center gap-2 pt-1">
                   <div className="w-20 h-20 rounded-full border-2 border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
-                    {imageUrl
-                      ? <img src={imageUrl} alt="vendor" className="w-full h-full object-cover" />
+                    {form.profile_image
+                      ? <img src={form.profile_image} alt="vendor" className="w-full h-full object-cover" />
                       : <svg className="w-10 h-10 text-gray-300" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
                         </svg>
@@ -290,11 +270,7 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
                   </div>
                   <label className="cursor-pointer border border-gray-300 rounded px-3 py-1 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
                     Choose image
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0];
-                        if (f) setImageUrl(URL.createObjectURL(f));
-                      }} />
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
                   </label>
                 </div>
               </div>
@@ -304,12 +280,21 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Print Name</label>
                   <input type="text" placeholder="Print Name" className={inputCls}
-                    value={printName} onChange={e => setPrintName(e.target.value)} />
+                    value={form.print_name} onChange={e => set('print_name', e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
                   <input type="text" placeholder="Display Name" className={inputCls}
                     value={displayName} onChange={e => setDisplayName(e.target.value)} />
+                </div>
+              </div>
+
+              {/* Row 2b: Contact Person */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                  <input type="text" placeholder="Contact Person" className={inputCls}
+                    value={form.contact_person} onChange={e => set('contact_person', e.target.value)} />
                 </div>
               </div>
 
@@ -376,26 +361,21 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
                 </div>
               </div>
 
-              {/* Row 4b: Contact Person */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
-                <input type="text" placeholder="Contact Person" className={inputCls}
-                  value={form.contact_person} onChange={e => set('contact_person', e.target.value)} />
-              </div>
-
               {/* Row 5: Opening | Credit Limit */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Opening (PKR)</label>
-                  <input type="number" min="0" step="0.01" className={inputCls}
+                  <input type="number" min="0" step="0.01" className={fieldErrors.opening_balance ? errCls : inputCls}
                     value={form.opening_balance}
                     onChange={e => set('opening_balance', parseFloat(e.target.value) || 0)} />
+                  {fieldErrors.opening_balance && <p className="mt-1 text-xs text-red-600">{fieldErrors.opening_balance}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Credit Limit (Days)</label>
-                  <input type="number" min="0" step="1" className={inputCls}
+                  <input type="number" min="0" step="1" className={fieldErrors.credit_limit_days ? errCls : inputCls}
                     value={form.credit_limit_days}
                     onChange={e => set('credit_limit_days', parseInt(e.target.value) || 0)} />
+                  {fieldErrors.credit_limit_days && <p className="mt-1 text-xs text-red-600">{fieldErrors.credit_limit_days}</p>}
                 </div>
               </div>
 
@@ -416,44 +396,60 @@ export default function VendorForm({ vendor, onClose, onSaved, onRefresh }: Prop
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
                   <input type="text" className={inputCls} placeholder="Address Line 1"
-                    value={addrLine1} onChange={e => setAddrLine1(e.target.value)} />
+                    value={form.address_line1} onChange={e => set('address_line1', e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
                   <input type="text" className={inputCls} placeholder="Address Line 2"
-                    value={addrLine2} onChange={e => setAddrLine2(e.target.value)} />
+                    value={form.address_line2} onChange={e => set('address_line2', e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                  <input type="text" className={inputCls} placeholder="City"
-                    value={city} onChange={e => setCity(e.target.value)} />
+                  {form.country === 'Pakistan' ? (
+                    <select className={inputCls} value={form.city} onChange={e => set('city', e.target.value)}>
+                      <option value="">-Choose-</option>
+                      {PK_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" className={inputCls} placeholder="City"
+                      value={form.city} onChange={e => set('city', e.target.value)} />
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                  <input type="text" className={inputCls} placeholder="State"
-                    value={addrState} onChange={e => setAddrState(e.target.value)} />
+                  {form.country === 'Pakistan' ? (
+                    <select className={inputCls} value={form.state} onChange={e => set('state', e.target.value)}>
+                      <option value="">-Choose-</option>
+                      {PK_PROVINCES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" className={inputCls} placeholder="State"
+                      value={form.state} onChange={e => set('state', e.target.value)} />
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
-                  <input type="text" className={inputCls} placeholder="Country"
-                    value={country} onChange={e => setCountry(e.target.value)} />
+                  <select className={inputCls} value={form.country} onChange={e => set('country', e.target.value)}>
+                    <option value="">-Choose-</option>
+                    {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Zip Code</label>
                   <input type="text" className={inputCls} placeholder="Zip Code"
-                    value={zipCode} onChange={e => setZipCode(e.target.value)} />
-                  {fieldErrors.zipCode && <p className="mt-1 text-xs text-red-600">{fieldErrors.zipCode}</p>}
+                    value={form.zip} onChange={e => set('zip', e.target.value)} />
+                  {fieldErrors.zip && <p className="mt-1 text-xs text-red-600">{fieldErrors.zip}</p>}
                 </div>
               </div>
             </div>
           )}
 
           {/* ── CUSTOM FIELDS TAB ──────────────────────────────────────────── */}
-          {tab === 'custom' && <CustomFieldsCard />}
+          {tab === 'custom' && <CustomFieldsTab entityType="vendor" entityId={vendor?.id ?? null} />}
         </div>
 
         {/* ── Footer ───────────────────────────────────────────────────────── */}

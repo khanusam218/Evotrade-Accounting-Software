@@ -36,6 +36,22 @@ export const createTransaction = (d: Partial<POSTransaction>): Promise<POSTransa
 export const voidTransaction   = (id: number): Promise<POSTransaction>    =>
   apiFetch(`${BASE}/transactions/${id}/void`, { method: 'POST' }).then(j<POSTransaction>);
 
+// ─── Cash movements (Cash In / Cash Out) ─────────────────────────────────────
+export interface POSCashMovement {
+  id: number;
+  session_id: number;
+  movement_type: 'cash_in' | 'cash_out';
+  from_account_id: number;
+  to_account_id: number;
+  amount: number;
+  comments: string | null;
+  created_at: string;
+}
+export const createCashMovement = (d: {
+  session_id: number; movement_type: 'cash_in' | 'cash_out';
+  from_account_id: number; to_account_id: number; amount: number; comments?: string;
+}): Promise<POSCashMovement> => post<POSCashMovement>(`${BASE}/cash-movements`, d);
+
 // ─── Summaries ────────────────────────────────────────────────────────────────
 export const getSessionSummary      = (sessionId: number)                => apiFetch(`${BASE}/sessions/${sessionId}/summary`).then(j);
 export const getCounterDailySummary = (counterId: number, date?: string) =>

@@ -54,7 +54,10 @@ export interface RecurringInvoice {
   due_days: number;
   gross_amount: number;
   tax_amount: number;
+  discount_pct: number;
   discount: number;
+  shipping_charges: number;
+  round_off: number;
   net_amount: number;
   status: RIStatus;
   created_at?: string;

@@ -7,6 +7,14 @@ export const WO_STATUS_COLORS: Record<WOStatus, string> = {
   cancelled:   'bg-red-100 text-red-700',
 };
 
+export interface WorkOrderComponent {
+  id?: number;
+  component_product_id: number | null;
+  component_name?: string;
+  quantity: number;
+  qty_on_hand?: number;
+}
+
 export interface WorkOrder {
   id: number;
   number: string;

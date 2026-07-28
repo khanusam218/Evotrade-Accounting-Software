@@ -30,3 +30,32 @@ export function validateCNIC(value: string): string {
   const v = value.trim();
   return v && !CNIC_RE.test(v) ? 'CNIC must be 13 digits, e.g. 12345-1234567-1.' : '';
 }
+
+// Generic "name" field guard — required, letters only (spaces and a small set
+// of common business-name punctuation allowed), no digits anywhere.
+export const NAME_RE = /^[A-Za-z][A-Za-z\s.,'&()-]*$/;
+export function validateName(value: string, label = 'Name'): string {
+  const v = value.trim();
+  if (!v) return `${label} is required.`;
+  if (/\d/.test(v)) return `${label} cannot contain numbers.`;
+  if (!NAME_RE.test(v)) return `${label} can only contain letters (spaces, ., ,, ', &, - and () are allowed).`;
+  return '';
+}
+
+// Item/product-style "name" guard — required, must contain at least one
+// letter, but (unlike validateName) numbers are allowed: product names
+// routinely include model numbers, sizes, or wattages (e.g. "LED Bulb 12W").
+export function validateItemName(value: string, label = 'Name'): string {
+  const v = value.trim();
+  if (!v) return `${label} is required.`;
+  if (!/[A-Za-z]/.test(v)) return `${label} must contain at least one letter.`;
+  return '';
+}
+
+export function validatePositive(value: number, label = 'Value'): string {
+  return value < 0 ? `${label} cannot be negative.` : '';
+}
+
+export function validatePercent(value: number, label = 'Percentage'): string {
+  return value < 0 || value > 100 ? `${label} must be between 0 and 100.` : '';
+}

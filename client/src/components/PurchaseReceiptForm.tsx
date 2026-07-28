@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { PurchaseReceipt, PurchaseReceiptLine } from '../types/purchaseReceipt';
 import { createPurchaseReceipt, updatePurchaseReceipt, getPurchaseReceipt } from '../api/purchaseReceipts';
+import { validatePositive } from '../utils/validators';
 
 interface Vendor        { id: number; print_name: string; }
 interface Warehouse     { id: number; name: string; }
@@ -25,6 +26,7 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
   const [lines,       setLines]       = useState<PurchaseReceiptLine[]>([emptyLine()]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
+  const [errors,      setErrors]      = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiFetch('/api/vendors?limit=500').then(r => r.json()).then(d => setVendors(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])));
@@ -51,10 +53,26 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
     setLines(prev => prev.map((l, idx) => idx !== i ? l : { ...l, ...patch }));
   }
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!warehouseId) e.warehouse = 'Warehouse is required.';
+    if (!date) e.date = 'Date is required.';
+    const validLines = lines.filter(l => l.description);
+    if (!validLines.length) e.lines = 'At least one receipt line is required.';
+    lines.forEach((l, i) => {
+      if (!l.description) return;
+      const orderedErr = validatePositive(l.ordered_qty, 'Ordered qty'); if (orderedErr) e[`ordered_${i}`] = orderedErr;
+      const receivedErr = validatePositive(l.received_qty, 'Received qty'); if (receivedErr) e[`received_${i}`] = receivedErr;
+      const costErr = validatePositive(l.unit_cost, 'Unit cost'); if (costErr) e[`cost_${i}`] = costErr;
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError('');
-    if (!vendorId)    { setError('Vendor is required'); return; }
-    if (!warehouseId) { setError('Warehouse is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = { vendor_id: Number(vendorId), warehouse_id: Number(warehouseId), order_id: orderId ? Number(orderId) : null, date, reference: reference || null, notes: notes || null, lines: lines.filter(l => l.description) };
@@ -77,18 +95,21 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
             {error && <div className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-3 gap-4">
               <div><label className="label">Vendor *</label>
-                <select className="input" value={vendorId} onChange={e => setVendorId(e.target.value)} required>
+                <select className={`input ${errors.vendor ? 'border-red-500' : ''}`} value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Select vendor…</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
-                </select></div>
+                </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}</div>
               <div><label className="label">Warehouse *</label>
-                <select className="input" value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required>
+                <select className={`input ${errors.warehouse ? 'border-red-500' : ''}`} value={warehouseId} onChange={e => setWarehouseId(e.target.value)} required>
                   <option value="">Select warehouse…</option>{warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select></div>
+                </select>
+                {errors.warehouse && <p className="text-xs text-red-500 mt-1">{errors.warehouse}</p>}</div>
               <div><label className="label">Linked Purchase Order</label>
                 <select className="input" value={orderId} onChange={e => setOrderId(e.target.value)}>
                   <option value="">None</option>{orders.map(o => <option key={o.id} value={o.id}>{o.number}</option>)}
                 </select></div>
-              <div><label className="label">Date</label><input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} required /></div>
+              <div><label className="label">Date *</label><input type="date" className={`input ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}</div>
               <div><label className="label">Reference</label><input className="input" value={reference} onChange={e => setReference(e.target.value)} /></div>
               <div><label className="label">Notes</label><input className="input" value={notes} onChange={e => setNotes(e.target.value)} /></div>
             </div>
@@ -97,6 +118,7 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
                 <h3 className="text-sm font-medium text-gray-700">Receipt Lines</h3>
                 <button type="button" onClick={() => setLines(prev => [...prev, emptyLine()])} className="text-sm text-indigo-600 hover:underline">+ Add Line</button>
               </div>
+              {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
               <table className="w-full text-sm border-collapse">
                 <thead><tr className="bg-gray-50">
                   <th className="table-th w-36">Product</th><th className="table-th">Description</th>
@@ -110,9 +132,9 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
                         <option value="">–</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
                       <td className="table-td"><input className="input py-1 text-xs" value={l.description} onChange={e => updLine(i, { description: e.target.value })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className="input py-1 text-xs text-right" value={l.ordered_qty} onChange={e => updLine(i, { ordered_qty: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className="input py-1 text-xs text-right" value={l.received_qty} onChange={e => updLine(i, { received_qty: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className="input py-1 text-xs text-right" value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`ordered_${i}`] ? 'border-red-500' : ''}`} value={l.ordered_qty} onChange={e => updLine(i, { ordered_qty: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`received_${i}`] ? 'border-red-500' : ''}`} value={l.received_qty} onChange={e => updLine(i, { received_qty: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`cost_${i}`] ? 'border-red-500' : ''}`} value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} /></td>
                       <td className="table-td text-center">{lines.length > 1 && <button type="button" onClick={() => setLines(prev => prev.filter((_,j) => j !== i))} className="text-red-400 hover:text-red-600">&times;</button>}</td>
                     </tr>
                   ))}

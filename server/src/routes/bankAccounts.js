@@ -47,6 +47,7 @@ router.get('/lookup', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT ba.id, ba.coa_id, coa.code, coa.name, coa.current_balance,
+              ba.bank_name, ba.branch_name, ba.account_number,
               ba.account_group, ba.is_credit_card
          FROM bank_accounts ba
          JOIN chart_of_accounts coa ON coa.id = ba.coa_id

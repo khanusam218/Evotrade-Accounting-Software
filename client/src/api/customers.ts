@@ -56,8 +56,3 @@ export async function getCustomerCategories(): Promise<CustomerCategory[]> {
   const { data } = await api.get<CustomerCategory[]>('/customer-categories');
   return data;
 }
-
-export async function createCustomerCategory(name: string): Promise<CustomerCategory> {
-  const { data } = await api.post<CustomerCategory>('/customer-categories', { name });
-  return data;
-}

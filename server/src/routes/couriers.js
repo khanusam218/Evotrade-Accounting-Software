@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function peekNextCode(client) {
+  await getOrCreateSeriesByPrefix(client, 'COU-', 6);
   const { rows } = await client.query(
     "SELECT 'COU-' || lpad((next_number)::text, padding::int, '0') AS code FROM number_series WHERE prefix='COU-'"
   );
@@ -10,6 +12,7 @@ async function peekNextCode(client) {
 }
 
 async function consumeNextCode(client) {
+  await getOrCreateSeriesByPrefix(client, 'COU-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='COU-' RETURNING 'COU-' || lpad(next_number::text,padding::int,'0') AS code"
   );

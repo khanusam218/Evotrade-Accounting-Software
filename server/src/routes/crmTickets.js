@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'T-', 5);
   const { rows: nsRows } = await client.query(
     "SELECT prefix, next_number, padding FROM number_series WHERE prefix='T-' FOR UPDATE"
   );
@@ -19,6 +21,7 @@ async function nextNumber(client) {
 
 router.get('/next-number', async (_req, res) => {
   try {
+    await getOrCreateSeriesByPrefix(pool, 'T-', 5);
     const { rows } = await pool.query("SELECT prefix, next_number, padding FROM number_series WHERE prefix='T-'");
     if (!rows.length) return res.json({ number: 'T-000001' });
     const { prefix, next_number, padding } = rows[0];

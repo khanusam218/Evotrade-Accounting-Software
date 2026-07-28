@@ -20,6 +20,13 @@ export interface Vendor {
   address: string | null;
   is_active: boolean;
   created_at: string;
+  profile_image: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
 }
 
 export interface VendorFormData {
@@ -34,6 +41,13 @@ export interface VendorFormData {
   contact_person: string;
   address: string;
   is_active: boolean;
+  profile_image?: string | null;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
 }
 
 export interface VendorsResponse {

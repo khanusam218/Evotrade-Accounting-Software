@@ -1,8 +1,10 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Purchase Quotations', 'RFQ-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Purchase Quotations'

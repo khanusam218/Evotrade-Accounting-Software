@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateCNNumber(client) {
+  await getOrCreateSeries(client, 'Credit Notes', 'CN-', 6);
   const { rows } = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
       WHERE name = 'Credit Notes'
@@ -159,11 +162,20 @@ router.post('/:id/approve', async (req, res, next) => {
 
     // Credit Accounts Receivable
     const { rows: [arCoa] } = await client.query(
-      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='accounts_receivable'`
+      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='AccountsReceivable'`
     );
     if (!arCoa) throw new Error('Accounts Receivable account not found');
     const arChange = arCoa.normal_balance === 'debit' ? -amt : amt;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [arChange, arCoa.id]);
+
+    await postJournalEntry(client, {
+      date: cn.date, memo: `Credit Note ${cn.number}`, reference: cn.number,
+      source_type: 'CreditNote', source_id: cn.id,
+      lines: [
+        changeToLine(debitCoa, debitChange, `Credit Note ${cn.number}`),
+        changeToLine(arCoa,    arChange,    `Credit Note ${cn.number}`),
+      ],
+    });
 
     await client.query(`UPDATE credit_notes SET status='approved' WHERE id=$1`, [cn.id]);
 
@@ -210,10 +222,15 @@ router.post('/:id/cancel', async (req, res, next) => {
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [debitChange, debitCoa.id]);
 
       const { rows: [arCoa] } = await client.query(
-        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='accounts_receivable'`
+        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='AccountsReceivable'`
       );
       const arChange = arCoa.normal_balance === 'debit' ? -amt : amt;
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [arChange, arCoa.id]);
+
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'CreditNote', source_id: cn.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Credit Note ${cn.number}`,
+      });
 
       // Restore balance on linked sales invoices
       const { rows: allocs } = await client.query(

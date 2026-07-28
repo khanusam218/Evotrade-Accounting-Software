@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateDNNumber(client) {
+  await getOrCreateSeries(client, 'Debit Notes', 'DN-', 6);
   const { rows } = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
       WHERE name = 'Debit Notes'
@@ -27,9 +30,9 @@ async function saveAllocations(client, debitNoteId, allocations) {
     const amt = parseFloat(al.amount);
     if (!amt || amt <= 0) continue;
     await client.query(
-      `INSERT INTO debit_note_allocations (debit_note_id, invoice_ref, description, amount)
-       VALUES ($1,$2,$3,$4)`,
-      [debitNoteId, al.invoice_ref || null, al.description || null, amt]
+      `INSERT INTO debit_note_allocations (debit_note_id, invoice_ref, description, amount, purchase_invoice_id)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [debitNoteId, al.invoice_ref || null, al.description || null, amt, al.purchase_invoice_id || null]
     );
     total += amt;
   }
@@ -152,7 +155,7 @@ router.post('/:id/approve', async (req, res, next) => {
 
     // Debit Accounts Payable (A/P decreases — debit reduces a credit-normal account)
     const { rows: [apCoa] } = await client.query(
-      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='accounts_payable'`
+      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='AccountsPayable'`
     );
     if (!apCoa) throw new Error('Accounts Payable account not found');
     const apChange = apCoa.normal_balance === 'credit' ? -amt : amt;
@@ -164,6 +167,32 @@ router.post('/:id/approve', async (req, res, next) => {
     );
     const creditChange = creditCoa.normal_balance === 'credit' ? amt : -amt;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [creditChange, creditCoa.id]);
+
+    await postJournalEntry(client, {
+      date: dn.date, memo: `Debit Note ${dn.number}`, reference: dn.number,
+      source_type: 'DebitNote', source_id: dn.id,
+      lines: [
+        changeToLine(apCoa,     apChange,     `Debit Note ${dn.number}`),
+        changeToLine(creditCoa, creditChange, `Debit Note ${dn.number}`),
+      ],
+    });
+
+    // Reduce balance on linked purchase invoices
+    const { rows: allocs } = await client.query(
+      'SELECT * FROM debit_note_allocations WHERE debit_note_id=$1 AND purchase_invoice_id IS NOT NULL',
+      [dn.id]
+    );
+    for (const al of allocs) {
+      const alAmt = parseFloat(al.amount);
+      await client.query(
+        `UPDATE purchase_invoices
+         SET paid_amount    = paid_amount + $1,
+             balance_amount = GREATEST(0, balance_amount - $1),
+             status         = CASE WHEN GREATEST(0, balance_amount - $1) = 0 THEN 'paid' ELSE 'partially_paid' END
+         WHERE id = $2 AND status IN ('approved', 'partially_paid')`,
+        [alAmt, al.purchase_invoice_id]
+      );
+    }
 
     await client.query(`UPDATE debit_notes SET status='approved' WHERE id=$1`, [dn.id]);
     await client.query('COMMIT');
@@ -186,7 +215,7 @@ router.post('/:id/cancel', async (req, res, next) => {
       const amt = parseFloat(dn.amount);
 
       const { rows: [apCoa] } = await client.query(
-        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='accounts_payable'`
+        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='AccountsPayable'`
       );
       const apChange = apCoa.normal_balance === 'credit' ? -amt : amt;
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [apChange, apCoa.id]);
@@ -196,6 +225,28 @@ router.post('/:id/cancel', async (req, res, next) => {
       );
       const creditChange = creditCoa.normal_balance === 'credit' ? amt : -amt;
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [creditChange, creditCoa.id]);
+
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'DebitNote', source_id: dn.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Debit Note ${dn.number}`,
+      });
+
+      // Restore balance on linked purchase invoices
+      const { rows: allocs } = await client.query(
+        'SELECT * FROM debit_note_allocations WHERE debit_note_id=$1 AND purchase_invoice_id IS NOT NULL',
+        [dn.id]
+      );
+      for (const al of allocs) {
+        const alAmt = parseFloat(al.amount);
+        await client.query(
+          `UPDATE purchase_invoices
+           SET paid_amount    = GREATEST(0, paid_amount - $1),
+               balance_amount = net_amount - GREATEST(0, paid_amount - $1),
+               status         = CASE WHEN GREATEST(0, paid_amount - $1) = 0 THEN 'approved' ELSE 'partially_paid' END
+           WHERE id = $2 AND status IN ('paid', 'partially_paid')`,
+          [alAmt, al.purchase_invoice_id]
+        );
+      }
     }
 
     await client.query(`UPDATE debit_notes SET status='cancelled' WHERE id=$1`, [dn.id]);

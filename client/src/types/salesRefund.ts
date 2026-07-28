@@ -38,5 +38,6 @@ export interface SalesRefund {
   unadjusted_amount: number;
   status: SRefundStatus;
   created_at?: string;
+  bank_account_name?: string;
   instruments?: SalesRefundInstrument[];
 }

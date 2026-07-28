@@ -1,15 +1,12 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function generateVendorCode(client) {
-  const { rows: nsRows } = await client.query(
-    `SELECT prefix, next_number, padding FROM number_series WHERE name = 'Vendors' FOR UPDATE`
-  );
-  if (!nsRows.length) throw new Error('Vendor number series not configured');
-  const { prefix, next_number, padding } = nsRows[0];
+  const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Vendors', 'V-', 6);
 
   const { rows: maxRows } = await client.query(
     `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(code, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
@@ -53,20 +50,24 @@ function buildWhere(query) {
 
 // GET /api/vendors/next-code  — MUST be before /:id
 router.get('/next-code', async (_req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
-      `SELECT prefix, next_number, padding FROM number_series WHERE name = 'Vendors'`
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Number series not found' });
-    const { prefix, next_number, padding } = rows[0];
+    await client.query('BEGIN');
+    const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Vendors', 'V-', 6);
 
-    const { rows: maxRows } = await pool.query(
+    const { rows: maxRows } = await client.query(
       `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(code, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
        FROM vendors WHERE code ~ '^[A-Za-z]+-[0-9]+$'`
     );
     const previewNum = Math.max(Number(next_number), Number(maxRows[0].max_num) + 1);
+    await client.query('COMMIT');
     res.json({ code: `${prefix}${String(previewNum).padStart(padding, '0')}` });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // GET /api/vendors
@@ -135,6 +136,9 @@ router.post('/', async (req, res, next) => {
       contact_person = null,
       address       = null,
       is_active     = true,
+      profile_image = null,
+      address_line1 = null, address_line2 = null,
+      city = null, state = null, zip = null, country = null,
     } = req.body;
 
     if (!print_name || !print_name.trim()) {
@@ -146,13 +150,17 @@ router.post('/', async (req, res, next) => {
       `INSERT INTO vendors
          (code, print_name, email, phone_1, phone_2,
           category_id, opening_balance, credit_limit_days,
-          is_principal, contact_person, address, is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          is_principal, contact_person, address, is_active,
+          profile_image, address_line1, address_line2, city, state, zip, country)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
         code, print_name.trim(), email, phone_1, phone_2,
         category_id || null, opening_balance, credit_limit_days,
         is_principal, contact_person, address, is_active,
+        profile_image || null,
+        address_line1 || null, address_line2 || null,
+        city || null, state || null, zip || null, country || null,
       ]
     );
 
@@ -181,6 +189,9 @@ router.put('/:id', async (req, res, next) => {
       contact_person = null,
       address       = null,
       is_active     = true,
+      profile_image = null,
+      address_line1 = null, address_line2 = null,
+      city = null, state = null, zip = null, country = null,
     } = req.body;
 
     if (!print_name || !print_name.trim()) {
@@ -199,13 +210,23 @@ router.put('/:id', async (req, res, next) => {
           is_principal      = $8,
           contact_person    = $9,
           address           = $10,
-          is_active         = $11
-        WHERE id = $12
+          is_active         = $11,
+          profile_image     = $12,
+          address_line1     = $13,
+          address_line2     = $14,
+          city              = $15,
+          state             = $16,
+          zip               = $17,
+          country           = $18
+        WHERE id = $19
         RETURNING *`,
       [
         print_name.trim(), email, phone_1, phone_2,
         category_id || null, opening_balance, credit_limit_days,
         is_principal, contact_person, address, is_active,
+        profile_image || null,
+        address_line1 || null, address_line2 || null,
+        city || null, state || null, zip || null, country || null,
         req.params.id,
       ]
     );

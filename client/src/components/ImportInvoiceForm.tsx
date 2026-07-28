@@ -4,6 +4,7 @@ import type { ImportInvoice, ImportInvoiceLine, ImportInvoiceExpense } from '../
 import { II_STATUS_LABELS } from '../types/importInvoice';
 import { createImportInvoice, updateImportInvoice, getImportInvoice, getNextImportInvoiceNumber } from '../api/importInvoices';
 import ComboBox from './ComboBox';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 const p2n = (s: string) => { const n = parseFloat(s); return isNaN(n) ? 0 : n; };
 const formatBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
@@ -36,6 +37,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
   const [expenses,  setExpenses]  = useState<ImportInvoiceExpense[]>([emptyExp()]);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
+  const [errors,    setErrors]    = useState<Record<string, string>>({});
 
   const [discPct,      setDiscPct]      = useState('0');
   const [shippingChgs, setShippingChgs] = useState('0');
@@ -168,15 +170,38 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
     setLines([emptyLine()]); setLineSearches(['']);
     setExpenses([emptyExp()]); setExpAccSearch(['']); setExpConSearch(['']);
     setDiscPct('0'); setShippingChgs('0'); setRoundOff('0');
-    setAttachments([]); setError('');
+    setAttachments([]); setError(''); setErrors({});
     getNextImportInvoiceNumber().then(r => setNextNum(r.number)).catch(() => {});
+  }
+
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!date) e.date = 'Date is required.';
+    if (!dueDate) e.dueDate = 'Due date is required.';
+    const discErr = validatePercent(p2n(discPct), 'Discount'); if (discErr) e.discPct = discErr;
+    const shipErr = validatePositive(p2n(shippingChgs), 'Shipping charges'); if (shipErr) e.shippingChgs = shipErr;
+    const validLines = lines.filter(l => l.product_id || l.description);
+    if (!validLines.length) e.lines = 'At least one product line is required.';
+    lines.forEach((l, i) => {
+      if (!(l.product_id || l.description)) return;
+      const qtyErr = validatePositive(Number(l.quantity || 0), 'Quantity'); if (qtyErr) e[`qty_${i}`] = qtyErr;
+      const priceErr = validatePositive(Number(l.unit_price || 0), 'Unit price'); if (priceErr) e[`price_${i}`] = priceErr;
+      const discPctErr = validatePercent(Number(l.discount_pct || 0), 'Discount %'); if (discPctErr) e[`linedisc_${i}`] = discPctErr;
+    });
+    expenses.forEach((ex, i) => {
+      const amt = Number(ex.amount || 0);
+      const amtErr = validatePositive(amt, 'Expense amount'); if (amtErr) e[`expamt_${i}`] = amtErr;
+      if (amt > 0 && !ex.account_id) e[`expacc_${i}`] = 'Account is required.';
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
   }
 
   async function doSave(saveMode: 'new' | 'close') {
     setError('');
-    if (!vendorId) { setError('Vendor is required'); return; }
+    if (!validate()) return;
     const validLines = lines.filter(l => l.product_id || l.description);
-    if (!validLines.length) { setError('At least one product line is required'); return; }
     setSaving(true);
     try {
       const payload = {
@@ -222,11 +247,12 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
             <div className="grid grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
-                <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <select className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.vendor ? 'border-red-500' : 'border-gray-300'}`}
                   value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Type to search vendor</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                 </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -243,13 +269,15 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Due Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                  value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.dueDate ? 'border-red-500' : 'border-gray-300'}`}
+                  value={dueDate} onChange={e => setDueDate(e.target.value)} required />
+                {errors.dueDate && <p className="text-xs text-red-500 mt-1">{errors.dueDate}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
@@ -334,16 +362,16 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <input type="number" min="0" step="any" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                          <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} />
                         </td>
                         <td className="px-2 py-1.5">
-                          <input type="number" min="0" step="any" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                          <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`price_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} />
                         </td>
                         <td className="px-2 py-1.5">
                           <div className="flex items-center gap-1">
-                            <input type="number" min="0" max="100" step="any" className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                            <input type="number" min="0" max="100" step="any" className={`flex-1 border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`linedisc_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                               value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} />
                             <span className="text-xs text-gray-500 flex-shrink-0">%</span>
                           </div>
@@ -386,6 +414,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
               className="mt-2 text-sm text-green-600 hover:text-green-700 hover:underline font-medium">
               + Add Line
             </button>
+            {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
 
             {/* Summary Row */}
             <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex flex-wrap items-center gap-6 text-xs font-semibold">
@@ -455,8 +484,9 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                                 setExpAccSearch(prev => prev.map((s, idx) => idx === i ? opt.label : s));
                               }}
                               placeholder="Type to search account"
-                              inputClassName={!ex.account_id ? 'border-red-400' : 'border-gray-200'}
+                              inputClassName={errors[`expacc_${i}`] ? 'border-red-500' : (!ex.account_id ? 'border-red-400' : 'border-gray-200')}
                             />
+                            {errors[`expacc_${i}`] && <p className="text-xs text-red-500 mt-1">{errors[`expacc_${i}`]}</p>}
                           </td>
                           {/* Description */}
                           <td className="px-2 py-1.5">
@@ -482,9 +512,10 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                           {/* Amount */}
                           <td className="px-2 py-1.5">
                             <input type="number" min="0" step="any"
-                              className="w-full border border-green-400 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                              className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`expamt_${i}`] ? 'border-red-500' : 'border-green-400'}`}
                               value={ex.amount}
                               onChange={e => updateExp(i, { amount: Number(e.target.value) })} />
+                            {errors[`expamt_${i}`] && <p className="text-xs text-red-500 mt-1">{errors[`expamt_${i}`]}</p>}
                           </td>
                           {/* Action */}
                           <td className="px-2 py-1.5 text-center">
@@ -556,7 +587,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                     <span className="text-gray-600 font-medium">Discount</span>
                     <div className="flex items-center gap-2">
                       <input type="text" inputMode="decimal"
-                        className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                        className={`w-16 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.discPct ? 'border-red-500' : 'border-gray-300'}`}
                         value={discPct}
                         onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setDiscPct(v); }}
                         onBlur={e => setDiscPct(String(Math.min(100, Math.max(0, p2n(e.target.value)))))}
@@ -564,6 +595,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                       <span className="text-gray-500 text-xs">%</span>
                       <span className="font-mono text-gray-700 w-20 text-right">{fmt(discAmt)}</span>
                     </div>
+                    {errors.discPct && <p className="text-xs text-red-500 mt-1">{errors.discPct}</p>}
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Tax</span>
@@ -571,12 +603,15 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Shipping Charges</span>
-                    <input type="text" inputMode="decimal"
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
-                      value={shippingChgs}
-                      onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setShippingChgs(v); }}
-                      onBlur={e => setShippingChgs(String(Math.max(0, p2n(e.target.value))))}
-                    />
+                    <div>
+                      <input type="text" inputMode="decimal"
+                        className={`w-28 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.shippingChgs ? 'border-red-500' : 'border-gray-300'}`}
+                        value={shippingChgs}
+                        onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setShippingChgs(v); }}
+                        onBlur={e => setShippingChgs(String(Math.max(0, p2n(e.target.value))))}
+                      />
+                      {errors.shippingChgs && <p className="text-xs text-red-500 mt-1">{errors.shippingChgs}</p>}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Round Off</span>

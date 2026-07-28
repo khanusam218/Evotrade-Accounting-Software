@@ -49,6 +49,7 @@ export default function ScheduledValuationsPage() {
   const [form,    setForm]    = useState<FormState>(EMPTY_FORM);
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState('');
+  const [errors,  setErrors]  = useState<Partial<Record<keyof FormState, string>>>({});
 
   // List
   const [page,           setPage]           = useState(1);
@@ -69,21 +70,30 @@ export default function ScheduledValuationsPage() {
   useEffect(() => { load(); }, [appliedFilters]);
 
   function openAdd() {
-    setEditing(null); setForm(EMPTY_FORM); setError(''); setView('form');
+    setEditing(null); setForm(EMPTY_FORM); setError(''); setErrors({}); setView('form');
   }
   function openEdit(item: ScheduledValuation) {
     setEditing(item);
     setForm({ date: item.date?.slice(0, 10) || '', narration: item.narration || '', status: item.status });
-    setError(''); setView('form');
+    setError(''); setErrors({}); setView('form');
   }
-  function closeForm() { setView('list'); setEditing(null); setError(''); load(); }
+  function closeForm() { setView('list'); setEditing(null); setError(''); setErrors({}); load(); }
 
   const setF = (key: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       setForm(f => ({ ...f, [key]: e.target.value }));
+      setErrors(prev => ({ ...prev, [key]: undefined }));
+    };
+
+  function validate(): boolean {
+    const e: Partial<Record<keyof FormState, string>> = {};
+    if (!form.date) e.date = 'Date is required.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
 
   async function handleSave(andNew = false) {
-    if (!form.date) { setError('Date is required'); return; }
+    if (!validate()) return;
     setError(''); setSaving(true);
     try {
       const payload = { date: form.date, narration: form.narration || null, status: form.status };
@@ -138,7 +148,7 @@ export default function ScheduledValuationsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Date <span className="text-red-500">*</span>
               </label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${errors.date ? 'border-red-500' : 'border-gray-300'}`}>
                 <input type="date" className="flex-1 px-2 py-2 text-sm focus:outline-none min-w-0"
                   value={form.date} onChange={setF('date')} />
                 <button onClick={() => setForm(f => ({ ...f, date: '' }))} className="px-2 text-gray-400 hover:text-gray-700">✕</button>
@@ -148,6 +158,7 @@ export default function ScheduledValuationsPage() {
                   </svg>
                 </span>
               </div>
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
 
             {/* Status */}

@@ -105,12 +105,15 @@ export default function BankDepositForm({ deposit, onClose, onSaved }: Props) {
     const amt = parseFloat(addAmount);
     if (!amt || amt <= 0) return;
     const acct = coaList.find((a) => String(a.id) === addAccountId);
+    const selectedBank = bankAccounts.find((ba) => String(ba.id) === bankAccountId);
     setLines((p) => [...p, {
       ...emptyLine(),
       received_from: acct ? `${acct.code} — ${acct.name}` : '',
       account_id: acct ? acct.id : null,
       description: addDescription,
       amount: amt,
+      bank_name: selectedBank?.bank_name ?? '',
+      branch_name: selectedBank?.branch_name ?? '',
     }]);
     setAddAccountId('');
     setAddDescription('');
@@ -184,6 +187,14 @@ export default function BankDepositForm({ deposit, onClose, onSaved }: Props) {
                 ))}
               </select>
               {errors.bank && <p className="mt-1 text-xs text-red-600">{errors.bank}</p>}
+              {(() => {
+                const selected = bankAccounts.find((ba) => String(ba.id) === bankAccountId);
+                if (!selected) return null;
+                const parts = [selected.bank_name, selected.branch_name, selected.account_number].filter(Boolean);
+                return parts.length ? (
+                  <p className="mt-1 text-xs text-gray-500">{parts.join(' · ')}</p>
+                ) : null;
+              })()}
             </div>
 
             {/* Number — green ▼ + input + green refresh */}

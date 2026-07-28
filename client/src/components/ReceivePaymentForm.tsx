@@ -6,6 +6,7 @@ import {
 } from '../api/receivePayments';
 import type { ReceivePayment, RPInstrument, RPAdjustment, RPAllocation } from '../types/receivePayment';
 import { RP_STATUS_LABELS } from '../types/receivePayment';
+import { validatePositive } from '../utils/validators';
 
 interface Props {
   payment: ReceivePayment | null;
@@ -38,6 +39,7 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
   const [saving, setSaving]         = useState(false);
   const [savingContinue, setSavingContinue] = useState(false);
   const [error,  setError]          = useState<string | null>(null);
+  const [errors, setErrors]         = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [customers,    setCustomers]    = useState<Customer[]>([]);
@@ -109,7 +111,10 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
     setAllocations(prev => {
       const exists = prev.find(a => a.invoice_id === inv.id);
       if (exists) return prev.filter(a => a.invoice_id !== inv.id);
-      return [...prev, { invoice_id: inv.id, invoice_number: inv.number, balance_amount: inv.balance_amount, amount: Number(inv.balance_amount) }];
+      const already = prev.reduce((s, a) => s + Number(a.amount || 0), 0) + totalAdj;
+      const remaining = Math.max(0, totalAmount - already);
+      const defaultAmt = Math.min(Number(inv.balance_amount), remaining);
+      return [...prev, { invoice_id: inv.id, invoice_number: inv.number, balance_amount: inv.balance_amount, amount: defaultAmt }];
     });
   }
   function handleDrop(e: React.DragEvent) {
@@ -127,11 +132,45 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
     };
   }
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!customerId) e.customerId = 'Customer is required.';
+    if (!date) e.date = 'Date is required.';
+    if (instruments.every(i => !i.amount)) {
+      e.instruments = 'At least one instrument with an amount is required.';
+    } else {
+      for (const inst of instruments) {
+        const amtErr = validatePositive(Number(inst.amount || 0), 'Amount');
+        if (amtErr) { e.instruments = amtErr; break; }
+      }
+    }
+    if (showAdjustments) {
+      for (const adj of adjustments) {
+        const amtErr = validatePositive(Number(adj.amount || 0), 'Adjustment amount');
+        if (amtErr) { e.adjustments = amtErr; break; }
+      }
+    }
+    if (makeSettlements) {
+      for (const alloc of allocations) {
+        const inv = openInvoices.find(i => i.id === alloc.invoice_id);
+        const amtErr = validatePositive(Number(alloc.amount || 0), 'Allocated amount');
+        if (amtErr) { e.allocations = amtErr; break; }
+        if (inv && Number(alloc.amount) > Number(inv.balance_amount)) {
+          e.allocations = 'Allocated amount cannot exceed the invoice balance.'; break;
+        }
+      }
+      if (!e.allocations && totalAlloc + totalAdj > totalAmount) {
+        e.allocations = 'Total allocated + adjustments cannot exceed the total amount received.';
+      }
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!customerId) { setError('Customer is required'); return; }
-    if (instruments.every(i => !i.amount)) { setError('At least one instrument with an amount is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       if (isEdit) await updateReceivePayment(payment!.id, buildPayload());
@@ -144,8 +183,7 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
 
   async function handleSaveAndContinue() {
     setError(null);
-    if (!customerId) { setError('Customer is required'); return; }
-    if (instruments.every(i => !i.amount)) { setError('At least one instrument with an amount is required'); return; }
+    if (!validate()) return;
     setSavingContinue(true);
     try {
       if (isEdit) await updateReceivePayment(payment!.id, buildPayload());
@@ -189,12 +227,13 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
                 <select
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.customerId ? 'border-red-500' : 'border-gray-300'}`}
                   value={customerId} onChange={e => setCustomerId(e.target.value)} required
                 >
                   <option value="">Type to search customer</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                 </select>
+                {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -217,9 +256,10 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
                 <input
                   type="date"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required
                 />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
@@ -288,6 +328,7 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
                   ))}
                 </tbody>
               </table>
+              {errors.instruments && <p className="text-xs text-red-500 mt-1">{errors.instruments}</p>}
             </div>
 
             {/* Account Adjustments checkbox */}
@@ -335,6 +376,7 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
                   </div>
                 </div>
               )}
+              {errors.adjustments && <p className="text-xs text-red-500 mt-1">{errors.adjustments}</p>}
             </div>
 
             {/* Make auto settlements */}
@@ -358,7 +400,14 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
                           <input type="checkbox"
                             className="h-4 w-4 rounded border-gray-300"
                             onChange={e => {
-                              if (e.target.checked) setAllocations(openInvoices.map(inv => ({ invoice_id: inv.id, invoice_number: inv.number, balance_amount: inv.balance_amount, amount: Number(inv.balance_amount) })));
+                              if (e.target.checked) {
+                                let remaining = totalAmount - totalAdj;
+                                setAllocations(openInvoices.map(inv => {
+                                  const amt = Math.max(0, Math.min(Number(inv.balance_amount), remaining));
+                                  remaining -= amt;
+                                  return { invoice_id: inv.id, invoice_number: inv.number, balance_amount: inv.balance_amount, amount: amt };
+                                }));
+                              }
                               else setAllocations([]);
                             }}
                             checked={openInvoices.length > 0 && allocations.length === openInvoices.length}
@@ -406,6 +455,7 @@ export default function ReceivePaymentForm({ payment, onClose, onSaved }: Props)
                   </table>
                 </div>
               )}
+              {errors.allocations && <p className="text-xs text-red-500 mt-1">{errors.allocations}</p>}
             </div>
 
             {/* Comments + Total Amount */}

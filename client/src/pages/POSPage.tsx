@@ -2,13 +2,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSalesOrders, getSalesOrder } from '../api/salesOrders';
 import type { SalesOrder } from '../types/salesOrder';
+import { getOpenSession, openSession, closeSession, createTransaction, createCashMovement } from '../api/pos';
+import type { POSSession, POSTransactionLine } from '../types/pos';
 
 interface Product {
   id: number;
   name: string;
   code: string;
   sale_price: number;
+  sale_tax_id?: number | null;
+  image?: string | null;
   stock_qty?: number;
+}
+
+interface Tax {
+  id: number;
+  name: string;
+  rate: number;
 }
 
 interface CartItem {
@@ -84,7 +94,7 @@ function CameraPlaceholder() {
 // ── Counter Selection Screen ───────────────────────────────────────────────────
 interface POSCounter { id: number; name: string; warehouse_name?: string; cash_account_name?: string; }
 
-function CounterSelectScreen({ onSelect }: { onSelect: (c: POSCounter) => void }) {
+function CounterSelectScreen({ onSelect, checkingIn, error }: { onSelect: (c: POSCounter) => void; checkingIn: boolean; error: string }) {
   const [counters,  setCounters]  = useState<POSCounter[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
@@ -231,13 +241,14 @@ function CounterSelectScreen({ onSelect }: { onSelect: (c: POSCounter) => void }
           <hr className="my-6 border-gray-200" />
 
           {/* Footer: CHECK IN button */}
-          <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-2">
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <button
               type="button"
-              disabled={!selected}
+              disabled={!selected || checkingIn}
               onClick={() => selected && onSelect(selected)}
               className={`flex items-center gap-2 px-5 py-2.5 rounded text-sm font-semibold transition-colors ${
-                selected
+                selected && !checkingIn
                   ? 'bg-green-600 hover:bg-green-700 text-white'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
@@ -245,7 +256,7 @@ function CounterSelectScreen({ onSelect }: { onSelect: (c: POSCounter) => void }
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
               </svg>
-              CHECK IN
+              {checkingIn ? 'CHECKING IN…' : 'CHECK IN'}
             </button>
           </div>
 
@@ -259,14 +270,38 @@ function CounterSelectScreen({ onSelect }: { onSelect: (c: POSCounter) => void }
 interface FTForm { transferType: 'cashout'|'cashin'|''; fromAccount: string; toAccount: string; amount: string; comments: string; username: string; password: string; }
 const emptyFT = (): FTForm => ({ transferType: '', fromAccount: '', toAccount: '', amount: '', comments: '', username: '', password: '' });
 
-function FundsTransferModal({ counterName, onClose }: { counterName: string; onClose: () => void }) {
+function FundsTransferModal({ counterName, sessionId, onClose, onTransferred }: {
+  counterName: string; sessionId: number | null; onClose: () => void; onTransferred: () => void;
+}) {
   const [form, setForm] = useState<FTForm>(emptyFT());
   const [accounts, setAccounts] = useState<{ id: number; name: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const set = (p: Partial<FTForm>) => setForm(f => ({ ...f, ...p }));
   useEffect(() => {
     apiFetch('/api/chart-of-accounts/lookup').then(r => r.json()).then(d => setAccounts(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
-  const isValid = form.transferType && form.fromAccount && form.toAccount && form.amount;
+  const isValid = form.transferType && form.fromAccount && form.toAccount && Number(form.amount) > 0;
+
+  async function handleTransfer() {
+    if (!isValid) return;
+    if (!sessionId) { setError('No open POS session — check in to a counter first.'); return; }
+    setSaving(true); setError('');
+    try {
+      await createCashMovement({
+        session_id: sessionId,
+        movement_type: form.transferType === 'cashin' ? 'cash_in' : 'cash_out',
+        from_account_id: Number(form.fromAccount),
+        to_account_id: Number(form.toAccount),
+        amount: Number(form.amount),
+        comments: form.comments || undefined,
+      });
+      onTransferred();
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Transfer failed');
+    } finally { setSaving(false); }
+  }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -344,10 +379,11 @@ function FundsTransferModal({ counterName, onClose }: { counterName: string; onC
             </div>
           </div>
         </div>
+        {error && <div className="mx-6 mb-2 rounded bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{error}</div>}
         <div className="px-6 py-4 border-t flex justify-end gap-3">
-          <button type="button" disabled={!isValid}
-            className={`px-5 py-2 rounded text-sm font-semibold ${isValid ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-            TRANSFER
+          <button type="button" disabled={!isValid || saving} onClick={handleTransfer}
+            className={`px-5 py-2 rounded text-sm font-semibold ${isValid && !saving ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+            {saving ? 'TRANSFERRING…' : 'TRANSFER'}
           </button>
           <button type="button" onClick={onClose} className="bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2 rounded text-sm font-semibold">CANCEL</button>
         </div>
@@ -357,13 +393,75 @@ function FundsTransferModal({ counterName, onClose }: { counterName: string; onC
 }
 
 // ── Checkout Summary Modal ─────────────────────────────────────────────────────
-function CheckoutSummaryModal({ counterName, onClose }: { counterName: string; onClose: () => void }) {
-  const [fields, setFields] = useState({ openingCash: '0', cashAmount: '0', cardAmount: '0', bankTransfer: '0', creditSale: '0', cashIn: '0', cashOut: '0', refund: '0', sales: '0', salesReturn: '0', cnSrGv: '0', closingCash: '0', counted: '0', comments: '' });
+interface CheckoutSummaryModalProps {
+  counterName: string;
+  mode: 'sale' | 'closeout';
+  sessionId: number | null;
+  cartSubtotal: number;
+  cartDiscount: number;
+  cartTax: number;
+  cartTotal: number;
+  onClose: () => void;
+  onSaleConfirmed?: () => void;
+  onSessionClosed?: () => void;
+  buildLines?: () => POSTransactionLine[];
+}
+
+function CheckoutSummaryModal({
+  counterName, mode, sessionId, cartSubtotal, cartDiscount, cartTax, cartTotal,
+  onClose, onSaleConfirmed, onSessionClosed, buildLines,
+}: CheckoutSummaryModalProps) {
+  const [fields, setFields] = useState({
+    openingCash: '0', cashAmount: mode === 'sale' ? cartTotal.toFixed(2) : '0', cardAmount: '0', bankTransfer: '0', creditSale: '0',
+    cashIn: '0', cashOut: '0', refund: '0', sales: '0', salesReturn: '0', cnSrGv: '0', closingCash: '0', counted: '0', comments: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const set = (p: Partial<typeof fields>) => setFields(f => ({ ...f, ...p }));
   const closingTotal = (Number(fields.closingCash) + Number(fields.cardAmount) + Number(fields.bankTransfer)).toFixed(2);
   const difference   = (Number(fields.counted) - Number(closingTotal)).toFixed(2);
+  const tenderedTotal = Number(fields.cashAmount) + Number(fields.cardAmount) + Number(fields.bankTransfer) + Number(fields.creditSale);
   const inp = 'w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500';
   const lbl = 'block text-sm text-gray-700 mb-1';
+
+  async function handleConfirm() {
+    setError('');
+    if (mode === 'sale') {
+      if (!sessionId) { setError('No open POS session — check in to a counter first.'); return; }
+      if (!buildLines || buildLines().length === 0) { setError('Cart is empty.'); return; }
+      if (tenderedTotal < cartTotal) { setError('Tendered amount is less than the sale total.'); return; }
+      const paymentMode = Number(fields.cardAmount) > 0 ? 'card' : Number(fields.bankTransfer) > 0 ? 'bank' : Number(fields.creditSale) > 0 ? 'credit' : 'cash';
+      setSaving(true);
+      try {
+        await createTransaction({
+          session_id: sessionId,
+          subtotal: cartSubtotal,
+          tax_total: cartTax,
+          discount: cartDiscount,
+          total: cartTotal,
+          paid_amount: tenderedTotal,
+          change_amount: Math.max(0, tenderedTotal - cartTotal),
+          payment_mode: paymentMode,
+          lines: buildLines(),
+        });
+        onSaleConfirmed?.();
+        onClose();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Checkout failed');
+      } finally { setSaving(false); }
+    } else {
+      if (!sessionId) { setError('No open POS session to close.'); return; }
+      setSaving(true);
+      try {
+        await closeSession(sessionId, { closing_balance: Number(closingTotal) });
+        onSessionClosed?.();
+        onClose();
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Checkout failed');
+      } finally { setSaving(false); }
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl mx-4 max-h-[92vh] flex flex-col">
@@ -414,8 +512,12 @@ function CheckoutSummaryModal({ counterName, onClose }: { counterName: string; o
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 resize-none" />
           </div>
         </div>
+        {error && <div className="mx-6 mb-2 rounded bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{error}</div>}
         <div className="px-6 py-4 border-t flex justify-end gap-3 shrink-0">
-          <button type="button" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-semibold">CONFIRM &amp; CHECKOUT</button>
+          <button type="button" disabled={saving} onClick={handleConfirm}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded text-sm font-semibold disabled:opacity-50">
+            {saving ? 'PROCESSING…' : 'CONFIRM & CHECKOUT'}
+          </button>
           <button type="button" onClick={onClose} className="bg-yellow-500 hover:bg-yellow-600 text-white px-5 py-2 rounded text-sm font-semibold">CANCEL</button>
         </div>
       </div>
@@ -426,9 +528,13 @@ function CheckoutSummaryModal({ counterName, onClose }: { counterName: string; o
 // ── Main POS Page ──────────────────────────────────────────────────────────────
 export default function POSPage() {
   const [counter,         setCounter]         = useState<POSCounter | null>(null);
+  const [session,         setSession]         = useState<POSSession | null>(null);
+  const [checkingIn,      setCheckingIn]      = useState(false);
+  const [checkInError,    setCheckInError]    = useState('');
   const [activeTab,       setActiveTab]       = useState<InvoiceTab>('invoice1');
   const [cartItems,       setCartItems]       = useState<CartItem[]>([]);
   const [products,        setProducts]        = useState<Product[]>([]);
+  const [taxes,           setTaxes]           = useState<Tax[]>([]);
   const [searchProduct,   setSearchProduct]   = useState('');
   const [searchOrder,     setSearchOrder]     = useState('');
   const [selectedItemIdx, setSelectedItemIdx] = useState<number | null>(null);
@@ -437,6 +543,7 @@ export default function POSPage() {
   const [showMenu,        setShowMenu]        = useState(false);
   const [showFundsTransfer, setShowFundsTransfer] = useState(false);
   const [showCheckout,    setShowCheckout]    = useState(false);
+  const [checkoutMode,    setCheckoutMode]    = useState<'sale' | 'closeout'>('sale');
   const [showShortcuts,   setShowShortcuts]   = useState(false);
   const [orderResults,    setOrderResults]    = useState<SalesOrder[]>([]);
   const [showOrderResults, setShowOrderResults] = useState(false);
@@ -455,10 +562,30 @@ export default function POSPage() {
       .then(r => r.json())
       .then(d => setProducts(Array.isArray(d) ? d : (d?.data ?? [])))
       .catch(() => {});
+    apiFetch('/api/taxes?applies_to=sales')
+      .then(r => r.json())
+      .then(d => setTaxes(Array.isArray(d) ? d : []))
+      .catch(() => {});
   }, []);
 
+  async function handleCheckIn(c: POSCounter) {
+    setCheckingIn(true); setCheckInError('');
+    try {
+      const open = await getOpenSession();
+      const sess = (open && open.counter_id === c.id)
+        ? open
+        : await openSession({ opening_balance: 0, counter_id: c.id });
+      setSession(sess);
+      setCounter(c);
+    } catch (err: unknown) {
+      setCheckInError(err instanceof Error ? err.message : 'Failed to open a POS session');
+    } finally { setCheckingIn(false); }
+  }
+
   // Show counter selection until a counter is chosen
-  if (!counter) return <CounterSelectScreen onSelect={c => setCounter(c)} />;
+  if (!counter) return (
+    <CounterSelectScreen onSelect={handleCheckIn} checkingIn={checkingIn} error={checkInError} />
+  );
 
   const filteredProducts = products.filter(p =>
     !searchProduct ||
@@ -469,8 +596,30 @@ export default function POSPage() {
   // Cart calculations
   const gross     = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
   const totalDisc = cartItems.reduce((s, i) => s + i.price * i.qty * i.disc / 100, 0);
-  const total     = gross - totalDisc;
+  const taxRateFor = (productTaxId?: number | null) => taxes.find(t => t.id === productTaxId)?.rate ?? 0;
+  const totalTax  = cartItems.reduce((s, i) => {
+    const net = i.price * i.qty * (1 - i.disc / 100);
+    return s + net * (taxRateFor(i.product.sale_tax_id) / 100);
+  }, 0);
+  const total     = gross - totalDisc + totalTax;
   const totalQty  = cartItems.reduce((s, i) => s + i.qty, 0);
+
+  function buildTransactionLines(): POSTransactionLine[] {
+    return cartItems.map(i => {
+      const net = i.price * i.qty * (1 - i.disc / 100);
+      const rate = taxRateFor(i.product.sale_tax_id);
+      return {
+        product_id: i.product.id,
+        description: i.product.name,
+        quantity: i.qty,
+        unit_price: i.price,
+        discount_pct: i.disc,
+        tax_id: i.product.sale_tax_id ?? null,
+        tax_amount: net * (rate / 100),
+        amount: net,
+      };
+    });
+  }
 
   async function searchOrders() {
     if (!searchOrder.trim()) { setOrderResults([]); setShowOrderResults(false); return; }
@@ -623,7 +772,7 @@ export default function POSPage() {
                     <svg className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
                     Home
                   </button>
-                  <button onClick={() => { setCounter(null); setShowMenu(false); }}
+                  <button onClick={() => { setCounter(null); setSession(null); setShowMenu(false); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
                     <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     Back
@@ -638,14 +787,14 @@ export default function POSPage() {
                     <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
                     Funds Transfer
                   </button>
-                  <button onClick={() => { setShowCheckout(true); setShowMenu(false); }}
+                  <button onClick={() => { setCheckoutMode('closeout'); setShowCheckout(true); setShowMenu(false); }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
                     <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                     Checkout ({counter.name})
                   </button>
                 </div>
                 <div className="p-3 border-t">
-                  <button onClick={() => { setCounter(null); setShowMenu(false); }}
+                  <button onClick={() => { setCounter(null); setSession(null); setShowMenu(false); }}
                     className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2 rounded">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                     LOGOUT
@@ -658,8 +807,31 @@ export default function POSPage() {
       </div>
 
       {/* Modals */}
-      {showFundsTransfer && <FundsTransferModal counterName={counter.name} onClose={() => setShowFundsTransfer(false)} />}
-      {showCheckout      && <CheckoutSummaryModal counterName={counter.name} onClose={() => setShowCheckout(false)} />}
+      {showFundsTransfer && (
+        <FundsTransferModal
+          counterName={counter.name}
+          sessionId={session?.id ?? null}
+          onClose={() => setShowFundsTransfer(false)}
+          onTransferred={() => {}}
+        />
+      )}
+      {showCheckout && (
+        <CheckoutSummaryModal
+          counterName={counter.name}
+          mode={checkoutMode}
+          sessionId={session?.id ?? null}
+          cartSubtotal={gross - totalDisc}
+          cartDiscount={totalDisc}
+          cartTax={totalTax}
+          cartTotal={total}
+          buildLines={buildTransactionLines}
+          onClose={() => setShowCheckout(false)}
+          onSaleConfirmed={() => {
+            setCartItems([]); setSelectedItemIdx(null); setNumpadBuffer('');
+          }}
+          onSessionClosed={() => { setCounter(null); setSession(null); }}
+        />
+      )}
       {showShortcuts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-md mx-4">
@@ -760,7 +932,7 @@ export default function POSPage() {
               </div>
               <div className="text-right text-xs text-gray-600 space-y-0.5">
                 <div><span className="font-medium">Gross:</span> {gross.toFixed(2)}</div>
-                <div><span className="font-medium">Tax:</span> 0.00</div>
+                <div><span className="font-medium">Tax:</span> {totalTax.toFixed(2)}</div>
                 <div><span className="font-medium">Discount:</span> {totalDisc.toFixed(2)}</div>
                 <div className="text-sm mt-0.5">
                   <span className="font-semibold text-gray-700">Total:</span>{' '}
@@ -774,8 +946,8 @@ export default function POSPage() {
           <div className="border-t bg-white shrink-0">
             <div className="flex">
               {/* Payment button */}
-              <div onClick={() => setShowCheckout(true)}
-                className="flex flex-col items-center justify-center border-r px-4 py-3 cursor-pointer hover:bg-gray-50 select-none">
+              <div onClick={() => { if (cartItems.length === 0) return; setCheckoutMode('sale'); setShowCheckout(true); }}
+                className={`flex flex-col items-center justify-center border-r px-4 py-3 select-none ${cartItems.length === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'}`}>
                 <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -884,7 +1056,11 @@ export default function POSPage() {
                     onClick={() => addToCart(p)}
                     className="bg-white border border-gray-200 rounded-lg p-3 text-left hover:border-green-400 hover:shadow-sm transition-all"
                   >
-                    <CameraPlaceholder />
+                    {p.image ? (
+                      <img src={p.image} alt={p.name} className="w-full h-20 object-cover rounded mb-2" />
+                    ) : (
+                      <CameraPlaceholder />
+                    )}
                     <p className="text-xs font-mono text-gray-600">{p.code}</p>
                     {p.stock_qty !== undefined && (
                       <p className="text-xs text-gray-500">{p.stock_qty}</p>

@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextSessionNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'PSS-', 4);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='PSS-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
@@ -10,6 +12,7 @@ async function nextSessionNumber(client) {
 }
 
 async function nextTxNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'POS-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='POS-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
@@ -232,6 +235,43 @@ router.post('/transactions/:id/void', async (req, res) => {
   finally { client.release(); }
 });
 
+// ─── Cash movements (Cash In / Cash Out via Funds Transfer) ─────────────────
+
+router.get('/cash-movements', async (req, res) => {
+  try {
+    const { session_id } = req.query;
+    let q = `SELECT cm.*, fa.name AS from_account_name, ta.name AS to_account_name
+             FROM pos_cash_movements cm
+             LEFT JOIN chart_of_accounts fa ON fa.id=cm.from_account_id
+             LEFT JOIN chart_of_accounts ta ON ta.id=cm.to_account_id WHERE 1=1`;
+    const p = [];
+    if (session_id) { p.push(session_id); q += ` AND cm.session_id=$${p.length}`; }
+    q += ' ORDER BY cm.created_at DESC';
+    const { rows } = await pool.query(q, p);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/cash-movements', async (req, res) => {
+  const { session_id, movement_type, from_account_id, to_account_id, amount, comments } = req.body;
+  try {
+    if (!session_id) return res.status(400).json({ error: 'session_id is required' });
+    if (!['cash_in', 'cash_out'].includes(movement_type)) return res.status(400).json({ error: 'movement_type must be cash_in or cash_out' });
+    if (!from_account_id || !to_account_id) return res.status(400).json({ error: 'from_account_id and to_account_id are required' });
+    if (!(Number(amount) > 0)) return res.status(400).json({ error: 'amount must be greater than 0' });
+
+    const { rows: sess } = await pool.query("SELECT id FROM pos_sessions WHERE id=$1 AND status='open'", [session_id]);
+    if (!sess.length) return res.status(400).json({ error: 'No open session found' });
+
+    const { rows } = await pool.query(
+      `INSERT INTO pos_cash_movements (session_id, movement_type, from_account_id, to_account_id, amount, comments)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [session_id, movement_type, from_account_id, to_account_id, Number(amount), comments || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ─── Session summary ────────────────────────────────────────────────────────
 
 router.get('/sessions/:id/summary', async (req, res) => {
@@ -341,7 +381,7 @@ router.get('/sessions-summary', async (req, res) => {
         s.opening_date                                                                              AS start_time,
         s.closing_date                                                                              AS end_time,
         s.opening_balance                                                                           AS opening_cash,
-        0                                                                                           AS cash_in,
+        COALESCE((SELECT SUM(amount) FROM pos_cash_movements cm WHERE cm.session_id=s.id AND cm.movement_type='cash_in'),  0) AS cash_in,
         COALESCE(SUM(t.total) FILTER (WHERE t.status='completed'), 0)                              AS sales,
         COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='cash'),   0)  AS cash,
         COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='card'),   0)  AS card,
@@ -350,7 +390,7 @@ router.get('/sessions-summary', async (req, res) => {
         COALESCE(SUM(t.total) FILTER (WHERE t.status='credit_note' OR t.status='sale_return'),  0) AS adjusted_cn_sr,
         COALESCE(SUM(t.total) FILTER (WHERE t.status='refund'),  0)                                AS refunds,
         COALESCE(SUM(t.total) FILTER (WHERE t.status='return'),  0)                                AS returns,
-        0                                                                                           AS cash_out,
+        COALESCE((SELECT SUM(amount) FROM pos_cash_movements cm WHERE cm.session_id=s.id AND cm.movement_type='cash_out'), 0) AS cash_out,
         CASE WHEN s.closing_balance IS NOT NULL
           THEN s.closing_balance - (
             s.opening_balance +

@@ -8,6 +8,7 @@ import {
   createOtherPayment, getNextOPNumber, updateOtherPayment,
 } from '../api/otherPayments';
 import { getOtherPayment } from '../api/otherPayments';
+import { validateName } from '../utils/validators';
 
 interface PaymentLine {
   mode: string;
@@ -176,7 +177,7 @@ export default function OtherPaymentForm({ record, onClose, onSaved }: Props) {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!contactName.trim()) e.contactName = 'Required';
+    const contactErr = validateName(contactName, 'Other Contact'); if (contactErr) e.contactName = contactErr;
     if (!bankAccountId)      e.bankAccountId = 'Required';
     if (!date)               e.date = 'Required';
     setErrors(e);

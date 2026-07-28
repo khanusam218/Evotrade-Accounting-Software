@@ -6,6 +6,7 @@ import { getSalesQuotation } from '../api/salesQuotations';
 import type { SalesOrder, SalesOrderLine } from '../types/salesOrder';
 import type { SalesQuotation } from '../types/salesQuotation';
 import { SO_STATUS_COLORS, SO_STATUS_LABELS } from '../types/salesOrder';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Props {
   order: SalesOrder | null;
@@ -66,6 +67,8 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
   const [attachments,   setAttachments]   = useState<AttachFile[]>([]);
   const [dragOver,      setDragOver]      = useState(false);
   const [showQuickAdd,  setShowQuickAdd]  = useState(false);
+  const [errors, setErrors] = useState<{ customerId?: string; date?: string; deliveryDate?: string; lines?: string; discountPct?: string; shippingChgs?: string }>({});
+  const [lineErrors, setLineErrors] = useState<Record<number, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -100,6 +103,8 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
     setCustomerId(String(fromQuotation.customer_id));
     setQuotationId(String(fromQuotation.id));
     getSalesQuotation(fromQuotation.id).then(q => {
+      setDiscountPct(Number(q.discount_pct ?? 0));
+      setShippingChgs(Number(q.shipping_charges ?? 0));
       if (q.lines?.length) {
         const ls = q.lines.map(l => ({ ...l, invoiced_qty: 0 } as SalesOrderLine));
         setLines(ls);
@@ -141,12 +146,38 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
     setAttachments(prev => [...prev, ...newFiles]);
   }
 
+  function validate(): boolean {
+    const errs: typeof errors = {};
+    if (!customerId) errs.customerId = 'Customer is required.';
+    if (!date) errs.date = 'Date is required.';
+    if (!deliveryDate) errs.deliveryDate = 'Delivery date is required.';
+    else if (date && deliveryDate < date) errs.deliveryDate = 'Delivery date cannot be before the order date.';
+    const discErr = validatePercent(discountPct, 'Discount'); if (discErr) errs.discountPct = discErr;
+    const shipErr = validatePositive(shippingChgs, 'Shipping charges'); if (shipErr) errs.shippingChgs = shipErr;
+
+    const activeLines = lines.filter(l => l.description.trim());
+    if (activeLines.length === 0) errs.lines = 'At least one line is required.';
+
+    const lErrs: Record<number, string> = {};
+    lines.forEach((l, i) => {
+      if (!l.description.trim()) return;
+      if (!(Number(l.quantity) > 0)) lErrs[i] = 'Quantity must be greater than 0.';
+      else if (Number(l.unit_price) < 0) lErrs[i] = 'Unit price cannot be negative.';
+      else {
+        const discE = validatePercent(Number(l.discount_pct), 'Discount'); if (discE) lErrs[i] = discE;
+      }
+    });
+    setLineErrors(lErrs);
+    if (Object.keys(lErrs).length > 0 && !errs.lines) errs.lines = 'Fix the highlighted line item errors below.';
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!customerId)  { setError('Customer is required'); return; }
-    if (!deliveryDate) { setError('Delivery date is required'); return; }
-    if (!lines.some(l => l.description.trim())) { setError('At least one line is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
@@ -217,10 +248,11 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
             <div className="grid grid-cols-5 gap-3">
               <div className="col-span-2">
                 <label className="label">Customer <span className="text-red-500">*</span></label>
-                <select className="input w-full" value={customerId} onChange={e => setCustomerId(e.target.value)} required>
+                <select className={`input w-full ${errors.customerId ? 'border-red-500' : ''}`} value={customerId} onChange={e => { setCustomerId(e.target.value); setErrors(p => ({ ...p, customerId: undefined })); }} required>
                   <option value="">Select customer…</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                 </select>
+                {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
               </div>
               <div>
                 <label className="label">Number <span className="text-red-500">*</span></label>
@@ -228,13 +260,16 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
               </div>
               <div>
                 <label className="label">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input w-full" value={date} onChange={e => setDate(e.target.value)} required />
+                <input type="date" className={`input w-full ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => { setDate(e.target.value); setErrors(p => ({ ...p, date: undefined })); }} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="label">Delivery Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input w-full" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)} required />
+                <input type="date" className={`input w-full ${errors.deliveryDate ? 'border-red-500' : ''}`} value={deliveryDate} onChange={e => { setDeliveryDate(e.target.value); setErrors(p => ({ ...p, deliveryDate: undefined })); }} required />
+                {errors.deliveryDate && <p className="text-xs text-red-500 mt-1">{errors.deliveryDate}</p>}
               </div>
             </div>
+            {errors.lines && <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{errors.lines}</div>}
 
             {/* Row 2: From Quotation | Reference | Subject */}
             <div className="grid grid-cols-3 gap-3">
@@ -297,7 +332,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.qty ?? String(l.quantity ?? 1)}
                             onChange={e => {
                               if (!numRx.test(e.target.value)) return;
@@ -312,7 +347,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.price ?? String(l.unit_price ?? 0)}
                             onChange={e => {
                               if (!numRx.test(e.target.value)) return;
@@ -327,7 +362,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.disc ?? String(l.discount_pct)}
                             onChange={e => {
                               if (!numRx.test(e.target.value)) return;
@@ -452,15 +487,16 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
-                        className="input w-16 text-right text-xs py-1 px-2"
+                        className={`input w-16 text-right text-xs py-1 px-2 ${errors.discountPct ? 'border-red-500' : ''}`}
                         value={discountPct}
                         min="0" max="100" step="0.01"
-                        onChange={e => setDiscountPct(parseFloat(e.target.value) || 0)}
+                        onChange={e => { setDiscountPct(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, discountPct: undefined })); }}
                       />
                       <span className="text-gray-500 text-xs">%</span>
                     </div>
                     <span className="font-mono text-red-600 flex-shrink-0">-{fmt(discAmount)}</span>
                   </div>
+                  {errors.discountPct && <p className="text-xs text-red-500 text-right">{errors.discountPct}</p>}
                   <div className="flex justify-between">
                     <span className="text-gray-600">Tax</span>
                     <span className="font-mono">{fmt(taxTotal)}</span>
@@ -469,12 +505,13 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                     <span className="text-gray-600 flex-shrink-0">Shipping Charges</span>
                     <input
                       type="number"
-                      className="input w-24 text-right text-xs py-1 px-2"
+                      className={`input w-24 text-right text-xs py-1 px-2 ${errors.shippingChgs ? 'border-red-500' : ''}`}
                       value={shippingChgs}
                       min="0" step="0.01"
-                      onChange={e => setShippingChgs(parseFloat(e.target.value) || 0)}
+                      onChange={e => { setShippingChgs(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, shippingChgs: undefined })); }}
                     />
                   </div>
+                  {errors.shippingChgs && <p className="text-xs text-red-500 text-right">{errors.shippingChgs}</p>}
                   <div className="border-t border-gray-300 pt-2 flex justify-between text-base font-bold">
                     <span className="text-indigo-700">Net (PKR)</span>
                     <span className="font-mono text-indigo-700">{fmt(netTotal)}</span>

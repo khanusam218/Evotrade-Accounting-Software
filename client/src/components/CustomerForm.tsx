@@ -2,17 +2,18 @@
 import type { Customer, CustomerCategory, CustomerFormData } from '../types/customer';
 import {
   createCustomer,
-  createCustomerCategory,
   getCustomerCategories,
   getNextCode,
   updateCustomer,
 } from '../api/customers';
-import { validateEmail, validatePhone, validateZip } from '../utils/validators';
+import { validateEmail, validateName, validatePercent, validatePhone, validatePositive, validateZip } from '../utils/validators';
+import CustomFieldsTab from './CustomFieldsTab';
 
 interface Props {
   customer: Customer | null;
   onClose: () => void;
   onSaved: () => void;
+  onSavedAndNew?: () => void;
 }
 
 type FormTab = 'general' | 'address' | 'custom';
@@ -30,6 +31,8 @@ const EMPTY: CustomerFormData = {
   is_active: true,
   address_line_1: '', address_line_2: '',
   city: '', state_province: '', country: '', zip_code: '',
+  profile_image: null,
+  longitude: '', latitude: '',
 };
 
 function toFormData(c: Customer): CustomerFormData {
@@ -54,6 +57,9 @@ function toFormData(c: Customer): CustomerFormData {
     state_province:            c.state_province ?? '',
     country:                   c.country ?? '',
     zip_code:                  c.zip_code ?? '',
+    profile_image:             c.profile_image ?? null,
+    longitude:                 c.longitude !== null && c.longitude !== undefined ? String(c.longitude) : '',
+    latitude:                  c.latitude !== null && c.latitude !== undefined ? String(c.latitude) : '',
   };
 }
 
@@ -67,30 +73,9 @@ function Label({ text, required }: { text: string; required?: boolean }) {
   );
 }
 
-function Input({ id, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      id={id}
-      {...props}
-      className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 ${
-        props.className ?? 'border-gray-300'
-      }`}
-    />
-  );
-}
-
-function CalendarSVG() {
-  return (
-    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-  );
-}
-
 // ── Main form ─────────────────────────────────────────────────────────────────
 
-export default function CustomerForm({ customer, onClose, onSaved }: Props) {
+export default function CustomerForm({ customer, onClose, onSaved, onSavedAndNew }: Props) {
   const isEdit = customer !== null;
 
   const [form, setForm]           = useState<CustomerFormData>(isEdit ? toFormData(customer) : EMPTY);
@@ -102,11 +87,8 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
 
   // Extra UI-only fields (not in API type yet)
   const [displayName,         setDisplayName]         = useState('');
-  const [longitude,           setLongitude]           = useState(String(customer?.longitude ?? ''));
-  const [latitude,            setLatitude]            = useState(String(customer?.latitude ?? ''));
   const [isCashCustomer,      setIsCashCustomer]      = useState(false);
   const [isSaleTaxRegistered, setIsSaleTaxRegistered] = useState(false);
-  const [imageUrl,            setImageUrl]            = useState('');
 
 
   // Category search
@@ -133,9 +115,32 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
     setErrors(prev => ({ ...prev, [key]: undefined }));
   }
 
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 300;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { set('profile_image', ev.target?.result as string); return; }
+        const scale = Math.max(size / img.width, size / img.height);
+        const dw = img.width * scale, dh = img.height * scale;
+        ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+        set('profile_image', canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(f);
+  }
+
   function validate() {
     const e: typeof errors = {};
-    if (!form.print_name.trim()) e.print_name = 'Customer name is required';
+    const nameErr = validateName(form.print_name, 'Customer name'); if (nameErr) e.print_name = nameErr;
     const email1Err = validateEmail(form.email_1); if (email1Err) e.email_1 = email1Err;
     const email2Err = validateEmail(form.email_2); if (email2Err) e.email_2 = email2Err;
     const email3Err = validateEmail(form.email_3); if (email3Err) e.email_3 = email3Err;
@@ -143,41 +148,38 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
     const phone2Err = validatePhone(form.phone_2); if (phone2Err) e.phone_2 = phone2Err;
     const phone3Err = validatePhone(form.phone_3); if (phone3Err) e.phone_3 = phone3Err;
     const zipErr = validateZip(form.zip_code); if (zipErr) e.zip_code = zipErr;
+    const balErr = validatePositive(form.opening_balance, 'Opening balance'); if (balErr) e.opening_balance = balErr;
+    const creditErr = validatePositive(form.credit_limit, 'Credit limit'); if (creditErr) e.credit_limit = creditErr;
+    const discErr = validatePercent(form.default_discount_percent, 'Default discount'); if (discErr) e.default_discount_percent = discErr;
+    const whtErr = validatePercent(form.withholding_tax_percent, 'Withholding tax'); if (whtErr) e.withholding_tax_percent = whtErr;
     setErrors(e);
     return Object.keys(e).length === 0;
-  }
-
-  async function resolveCategoryId(): Promise<string> {
-    if (form.category_id) return form.category_id;
-    const typed = catSearch.trim();
-    if (!typed) return '';
-    const existing = categories.find(c => c.name.toLowerCase() === typed.toLowerCase());
-    if (existing) return String(existing.id);
-    const created = await createCustomerCategory(typed);
-    setCategories(prev => [...prev, created]);
-    return String(created.id);
   }
 
   async function handleSave(saveAndNew = false) {
     if (!validate()) return;
     setSaving(true);
     try {
-      const category_id = await resolveCategoryId();
-      const payload = { ...form, category_id };
       if (isEdit) {
-        await updateCustomer(customer.id, payload);
+        await updateCustomer(customer.id, form);
       } else {
-        await createCustomer(payload);
+        await createCustomer(form);
       }
       if (saveAndNew) {
+        // Editing: this instance still holds the record via the `customer`
+        // prop, which can't be reset locally — hand back to the parent to
+        // swap in a fresh "add" instance instead of resetting in place
+        // (that left the code field showing the OLD customer while every
+        // other field went blank, and a second save would have overwritten
+        // the original record with that blank data).
+        if (isEdit) {
+          onSavedAndNew?.();
+          return;
+        }
         setForm(EMPTY);
         setDisplayName('');
-        setLongitude('');
-        setLatitude('');
         setIsCashCustomer(false);
         setIsSaleTaxRegistered(false);
-        setImageUrl('');
-        setCatSearch('');
         setErrors({});
         setActiveTab('general');
         getNextCode().then(setNextCode).catch(() => {});
@@ -287,8 +289,8 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
                 {/* Profile Image */}
                 <div className="flex flex-col items-center gap-2 shrink-0">
                   <div className="w-24 h-24 rounded-full border-2 border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
-                    {imageUrl ? (
-                      <img src={imageUrl} alt="Profile" className="w-full h-full object-cover" />
+                    {form.profile_image ? (
+                      <img src={form.profile_image} alt="Profile" className="w-full h-full object-cover" />
                     ) : (
                       <svg className="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -298,8 +300,7 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
                   </div>
                   <label className="cursor-pointer border border-gray-300 rounded px-4 py-1.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
                     Choose image
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) setImageUrl(URL.createObjectURL(f)); }} />
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
                   </label>
                 </div>
               </div>
@@ -308,9 +309,10 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label text="Print Name" />
-                  <input className={inputCls} placeholder="Print Name"
+                  <input className={`${inputCls} ${errors.print_name ? 'border-red-500' : ''}`} placeholder="Print Name"
                     value={form.print_name}
                     onChange={e => set('print_name', e.target.value)} />
+                  {errors.print_name && <p className="text-xs text-red-500 mt-1">{errors.print_name}</p>}
                 </div>
                 <div>
                   <Label text="Display Name" />
@@ -414,12 +416,12 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
                 <div>
                   <Label text="Longitude" />
                   <input className={inputCls} placeholder="longitude"
-                    value={longitude} onChange={e => setLongitude(e.target.value)} />
+                    value={form.longitude} onChange={e => set('longitude', e.target.value)} />
                 </div>
                 <div>
                   <Label text="Latitude" />
                   <input className={inputCls} placeholder="latitude"
-                    value={latitude} onChange={e => setLatitude(e.target.value)} />
+                    value={form.latitude} onChange={e => set('latitude', e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-3 pb-1">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -439,27 +441,31 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label text="Opening Balance" />
-                  <input type="number" min="0" step="0.01" className={inputCls}
+                  <input type="number" min="0" step="0.01" className={`${inputCls} ${errors.opening_balance ? 'border-red-500' : ''}`}
                     value={form.opening_balance}
                     onChange={e => set('opening_balance', parseFloat(e.target.value) || 0)} />
+                  {errors.opening_balance && <p className="text-xs text-red-500 mt-1">{errors.opening_balance}</p>}
                 </div>
                 <div>
                   <Label text="Credit Limit" />
-                  <input type="number" min="0" step="0.01" className={inputCls}
+                  <input type="number" min="0" step="0.01" className={`${inputCls} ${errors.credit_limit ? 'border-red-500' : ''}`}
                     value={form.credit_limit}
                     onChange={e => set('credit_limit', parseFloat(e.target.value) || 0)} />
+                  {errors.credit_limit && <p className="text-xs text-red-500 mt-1">{errors.credit_limit}</p>}
                 </div>
                 <div>
                   <Label text="Default Discount (%)" />
-                  <input type="number" min="0" max="100" step="0.01" className={inputCls}
+                  <input type="number" min="0" max="100" step="0.01" className={`${inputCls} ${errors.default_discount_percent ? 'border-red-500' : ''}`}
                     value={form.default_discount_percent}
                     onChange={e => set('default_discount_percent', parseFloat(e.target.value) || 0)} />
+                  {errors.default_discount_percent && <p className="text-xs text-red-500 mt-1">{errors.default_discount_percent}</p>}
                 </div>
                 <div>
                   <Label text="Withholding Tax (%)" />
-                  <input type="number" min="0" max="100" step="0.01" className={inputCls}
+                  <input type="number" min="0" max="100" step="0.01" className={`${inputCls} ${errors.withholding_tax_percent ? 'border-red-500' : ''}`}
                     value={form.withholding_tax_percent}
                     onChange={e => set('withholding_tax_percent', parseFloat(e.target.value) || 0)} />
+                  {errors.withholding_tax_percent && <p className="text-xs text-red-500 mt-1">{errors.withholding_tax_percent}</p>}
                 </div>
               </div>
 
@@ -534,36 +540,7 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
           {/* ── CUSTOM FIELDS TAB ───────────────────────────────────────────── */}
           {activeTab === 'custom' && (
             <div className="max-w-2xl">
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-5 py-4">
-                  <h3 className="text-base font-semibold text-gray-800 mb-4">Add Fields</h3>
-                  <div className="w-56">
-                    <Label text="Field" required />
-                    <div className="relative">
-                      <select className={inputCls + ' appearance-none pr-8'}>
-                        <option value="">-Choose-</option>
-                      </select>
-                      <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <div className="border-t border-gray-200 px-5 py-3 bg-gray-50 flex justify-end gap-3">
-                  <button type="button"
-                    className="flex items-center gap-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    ADD
-                  </button>
-                  <button type="button"
-                    className="flex items-center gap-1.5 bg-orange-400 hover:bg-orange-500 text-white text-sm font-medium px-4 py-2 rounded">
-                    <span className="text-base leading-none font-light">×</span> CANCEL
-                  </button>
-                </div>
-              </div>
+              <CustomFieldsTab entityType="customer" entityId={isEdit ? customer.id : null} />
             </div>
           )}
         </div>
@@ -573,7 +550,7 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
           <div className="flex rounded overflow-hidden shadow-sm">
             <button
               type="button"
-              onClick={() => handleSave(false)}
+              onClick={() => handleSave(true)}
               disabled={saving}
               className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium px-5 py-2 transition-colors disabled:opacity-50"
             >
@@ -581,7 +558,8 @@ export default function CustomerForm({ customer, onClose, onSaved }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => handleSave(true)}
+              title="Save and close"
+              onClick={() => handleSave(false)}
               disabled={saving}
               className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-2.5 py-2 border-l border-gray-300 transition-colors disabled:opacity-50"
             >

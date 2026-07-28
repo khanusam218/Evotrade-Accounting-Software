@@ -4,20 +4,13 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // Use a raw pool with superuser privileges for DDL migrations (bypasses RLS wrapper)
-const rawPool = new Pool(
-  process.env.DATABASE_URL
-    ? {
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.PGSSL === 'false' ? false : { rejectUnauthorized: false },
-      }
-    : {
-        host:     process.env.DB_HOST     || 'localhost',
-        port:     parseInt(process.env.DB_PORT || '5432'),
-        database: process.env.DB_NAME     || 'evotrade',
-        user:     process.env.DB_USER     || 'postgres',
-        password: process.env.DB_PASSWORD || '',
-      }
-);
+const rawPool = new Pool({
+  host:     process.env.DB_HOST     || 'localhost',
+  port:     parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME     || 'evotrade',
+  user:     process.env.DB_USER     || 'postgres',
+  password: process.env.DB_PASSWORD || '',
+});
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 

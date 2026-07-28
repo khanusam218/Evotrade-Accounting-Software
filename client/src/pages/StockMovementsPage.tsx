@@ -5,6 +5,7 @@ import {
   completeStockMovement, cancelStockMovement, deleteStockMovement,
 } from '../api/stockMovements';
 import { StockMovement } from '../types/stockMovement';
+import { validatePositive } from '../utils/validators';
 
 interface WHouse { id: number; name: string; }
 interface Prod   { id: number; name: string; }
@@ -34,6 +35,14 @@ const EMPTY_FORM: FormState = {
 const EMPTY_LINE: LineState = { product_id: '', quantity: 0, notes: '' };
 const PAGE_SIZES = [10, 25, 50, 100];
 
+interface FieldErrors {
+  from_warehouse_id?: string;
+  to_warehouse_id?: string;
+  date?: string;
+  lines?: string;
+}
+type LineErrors = Partial<Record<'quantity', string>>;
+
 const SortIcon = () => (
   <svg className="inline-block ml-1 w-3 h-3 opacity-50" viewBox="0 0 24 24" fill="currentColor">
     <path d="M7 10l5-5 5 5H7zm0 4l5 5 5-5H7z" />
@@ -51,6 +60,8 @@ export default function StockMovementsPage() {
   const [lines,       setLines]       = useState<LineState[]>([{ ...EMPTY_LINE }]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
+  const [errors,      setErrors]      = useState<FieldErrors>({});
+  const [lineErrors,  setLineErrors]  = useState<LineErrors[]>([]);
   const [attachments,   setAttachments]   = useState<File[]>([]);
   const [showScanModal, setShowScanModal] = useState(false);
   const [scanQuery,     setScanQuery]     = useState('');
@@ -105,6 +116,8 @@ export default function StockMovementsPage() {
     setLines([{ ...EMPTY_LINE }]);
     setAttachments([]);
     setError('');
+    setErrors({});
+    setLineErrors([]);
     setView('form');
   }
 
@@ -125,17 +138,24 @@ export default function StockMovementsPage() {
     setLines(existingLines.length ? existingLines : [{ ...EMPTY_LINE }]);
     setAttachments([]);
     setError('');
+    setErrors({});
+    setLineErrors([]);
     setView('form');
   }
 
-  function closeForm() { setView('list'); setEditing(null); setError(''); load(); }
+  function closeForm() { setView('list'); setEditing(null); setError(''); setErrors({}); load(); }
 
   const setF = (key: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       setForm(f => ({ ...f, [key]: e.target.value }));
+      if (key === 'from_warehouse_id' || key === 'to_warehouse_id' || key === 'date') {
+        setErrors(prev => ({ ...prev, [key]: undefined }));
+      }
+    };
 
   function setLine(i: number, key: keyof LineState, value: string | number) {
     setLines(ls => ls.map((l, j) => j === i ? { ...l, [key]: value } : l));
+    setLineErrors(prev => prev.map((le, j) => j === i ? {} : le));
   }
 
   function confirmLine(i: number) {
@@ -186,10 +206,30 @@ export default function StockMovementsPage() {
     scanInputRef.current?.focus();
   }
 
+  function validate(): boolean {
+    const e: FieldErrors = {};
+    if (!form.from_warehouse_id) e.from_warehouse_id = 'From Warehouse is required.';
+    if (!form.to_warehouse_id)   e.to_warehouse_id   = 'To Warehouse is required.';
+    if (!form.date)              e.date              = 'Date is required.';
+
+    const validLines = lines.filter(l => l.product_id !== '' && Number(l.quantity) > 0);
+    if (validLines.length === 0) e.lines = 'At least one product line with a positive quantity is required.';
+
+    const le: LineErrors[] = lines.map(l => {
+      if (l.product_id === '') return {};
+      const lineErr: LineErrors = {};
+      const qErr = validatePositive(Number(l.quantity), 'Quantity'); if (qErr) lineErr.quantity = qErr;
+      return lineErr;
+    });
+    if (le.some(x => Object.keys(x).length > 0)) e.lines = e.lines || 'Please fix the errors in the product lines.';
+
+    setErrors(e);
+    setLineErrors(le);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave(andNew = false) {
-    if (!form.from_warehouse_id) { setError('From Warehouse is required'); return; }
-    if (!form.to_warehouse_id)   { setError('To Warehouse is required'); return; }
-    if (!form.date)               { setError('Date is required'); return; }
+    if (!validate()) return;
     setError(''); setSaving(true);
     try {
       const payload = {
@@ -281,12 +321,13 @@ export default function StockMovementsPage() {
                 From Warehouse <span className="text-red-500">*</span>
               </label>
               <select
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.from_warehouse_id ? 'border-red-500' : 'border-gray-300'}`}
                 value={form.from_warehouse_id}
                 onChange={setF('from_warehouse_id')}>
                 <option value="">-Choose-</option>
                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
+              {errors.from_warehouse_id && <p className="text-xs text-red-500 mt-1">{errors.from_warehouse_id}</p>}
             </div>
 
             <div>
@@ -294,12 +335,13 @@ export default function StockMovementsPage() {
                 To Warehouse <span className="text-red-500">*</span>
               </label>
               <select
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.to_warehouse_id ? 'border-red-500' : 'border-gray-300'}`}
                 value={form.to_warehouse_id}
                 onChange={setF('to_warehouse_id')}>
                 <option value="">-Choose-</option>
                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
+              {errors.to_warehouse_id && <p className="text-xs text-red-500 mt-1">{errors.to_warehouse_id}</p>}
             </div>
 
             {/* Number with green dropdown + refresh buttons */}
@@ -332,7 +374,7 @@ export default function StockMovementsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Date <span className="text-red-500">*</span>
               </label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${errors.date ? 'border-red-500' : 'border-gray-300'}`}>
                 <input
                   type="date"
                   className="flex-1 px-2 py-2 text-sm focus:outline-none min-w-0"
@@ -340,7 +382,7 @@ export default function StockMovementsPage() {
                   onChange={setF('date')}
                 />
                 <button
-                  onClick={() => setForm(f => ({ ...f, date: '' }))}
+                  onClick={() => { setForm(f => ({ ...f, date: '' })); }}
                   className="px-2 text-gray-400 hover:text-gray-700 text-base leading-none">
                   ✕
                 </button>
@@ -350,6 +392,7 @@ export default function StockMovementsPage() {
                   </svg>
                 </span>
               </div>
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
 
             <div>
@@ -377,6 +420,7 @@ export default function StockMovementsPage() {
           </div>
 
           {/* Products / Lines table */}
+          {errors.lines && <p className="text-xs text-red-500 mb-2">{errors.lines}</p>}
           <div className="border border-gray-200 rounded mb-6">
             <table className="w-full text-sm">
               <thead>
@@ -402,10 +446,11 @@ export default function StockMovementsPage() {
                       <input
                         type="number"
                         min={0}
-                        className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        className={`w-full border rounded px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`}
                         value={line.quantity}
                         onChange={e => setLine(i, 'quantity', e.target.value === '' ? '' : Number(e.target.value))}
                       />
+                      {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>
                     <td className="px-4 py-2 w-24 text-right">
                       <button

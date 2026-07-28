@@ -6,10 +6,12 @@ import {
   createSalesDelivery, updateSalesDelivery, getSalesDelivery, getNextDeliveryNumber,
 } from '../api/salesDeliveries';
 import QuickAddModal from './QuickAddModal';
+import { validatePositive } from '../utils/validators';
 
 interface Customer  { id: number; print_name: string; }
 interface Warehouse { id: number; name: string; }
-interface Product   { id: number; name: string; sku?: string; barcode?: string; sale_price?: number; }
+interface Product   { id: number; name: string; sku?: string; barcode?: string; sale_price: number; sale_tax_id: number | null; }
+interface SalesOrder { id: number; number: string; customer_id: number; }
 interface Props     { delivery: SalesDelivery | null; onClose: () => void; onSaved: () => void; }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -25,8 +27,10 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
   const [customers,     setCustomers]     = useState<Customer[]>([]);
   const [warehouses,    setWarehouses]    = useState<Warehouse[]>([]);
   const [products,      setProducts]      = useState<Product[]>([]);
+  const [orders,        setOrders]        = useState<SalesOrder[]>([]);
 
   const [number,          setNumber]          = useState('');
+  const [orderId,         setOrderId]          = useState('');
   const [customerId,      setCustomerId]       = useState('');
   const [warehouseId,     setWarehouseId]      = useState('');
   const [date,            setDate]             = useState(new Date().toISOString().slice(0, 10));
@@ -41,6 +45,8 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
   const [showQuickAdd,    setShowQuickAdd]      = useState(false);
   const [attachments,     setAttachments]       = useState<File[]>([]);
   const [dragOver,        setDragOver]          = useState(false);
+  const [errors, setErrors] = useState<{ customerId?: string; warehouseId?: string; date?: string; lines?: string }>({});
+  const [lineErrors, setLineErrors] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const status = (isEdit ? delivery!.status : 'draft') as string;
@@ -52,6 +58,9 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
     apiFetch('/api/warehouses').then(r => r.json()).then(d => setWarehouses(Array.isArray(d) ? d : []));
     apiFetch('/api/products?limit=500').then(r => r.json()).then(d =>
       setProducts(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []))
+    );
+    apiFetch('/api/sales-orders?limit=500').then(r => r.json()).then(d =>
+      setOrders(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []))
     );
     if (!isEdit) getNextDeliveryNumber().then(d => setNumber(d.number)).catch(() => setNumber('SD-000001'));
   }, []);
@@ -65,6 +74,7 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
     if (!delivery) return;
     getSalesDelivery(delivery.id).then(full => {
       setNumber(full.number);
+      setOrderId(full.order_id ? String(full.order_id) : '');
       setCustomerId(String(full.customer_id));
       setWarehouseId(String(full.warehouse_id));
       setDate(full.date?.slice(0, 10) ?? '');
@@ -112,7 +122,7 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
     return {
       customer_id:      Number(customerId),
       warehouse_id:     Number(warehouseId),
-      order_id:         null,
+      order_id:         orderId ? Number(orderId) : null,
       date,
       reference:        reference || null,
       notes:            comments || null,
@@ -124,10 +134,33 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
     };
   }
 
+  function validate(): boolean {
+    const errs: typeof errors = {};
+    if (!customerId)  errs.customerId  = 'Customer is required.';
+    if (!warehouseId) errs.warehouseId = 'Warehouse is required.';
+    if (!date)        errs.date        = 'Date is required.';
+
+    const activeLines = lines.filter(l => l.product_id || l.description.trim());
+    if (activeLines.length === 0) errs.lines = 'At least one line item is required.';
+
+    const lErrs: Record<number, string> = {};
+    lines.forEach((l, i) => {
+      if (!(l.product_id || l.description.trim())) return;
+      const qty = Number(l.delivered_qty);
+      const posErr = validatePositive(qty, 'Delivered quantity');
+      if (posErr) { lErrs[i] = posErr; return; }
+      if (!(qty > 0)) lErrs[i] = 'Delivered quantity must be greater than 0.';
+    });
+    setLineErrors(lErrs);
+    if (Object.keys(lErrs).length > 0 && !errs.lines) errs.lines = 'Fix the highlighted line item errors below.';
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError('');
-    if (!customerId)  { setError('Customer is required'); return; }
-    if (!warehouseId) { setError('Warehouse is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       if (isEdit) await updateSalesDelivery(delivery!.id, buildPayload());
@@ -139,8 +172,7 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
 
   async function handleSaveAndContinue() {
     setError('');
-    if (!customerId)  { setError('Customer is required'); return; }
-    if (!warehouseId) { setError('Warehouse is required'); return; }
+    if (!validate()) return;
     setSavingContinue(true);
     try {
       if (isEdit) await updateSalesDelivery(delivery!.id, buildPayload());
@@ -182,12 +214,13 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
                   <select
-                    className="w-full border border-red-400 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                    value={customerId} onChange={e => setCustomerId(e.target.value)} required
+                    className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.customerId ? 'border-red-500' : 'border-gray-300'}`}
+                    value={customerId} onChange={e => { setCustomerId(e.target.value); setErrors(p => ({ ...p, customerId: undefined })); }} required
                   >
                     <option value="">Type to search customer</option>
                     {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                   </select>
+                  {errors.customerId && <p className="mt-1 text-xs text-red-600">{errors.customerId}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -209,18 +242,41 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
                   <input type="date" required
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                    value={date} onChange={e => setDate(e.target.value)}
+                    className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
+                    value={date} onChange={e => { setDate(e.target.value); setErrors(p => ({ ...p, date: undefined })); }}
                   />
+                  {errors.date && <p className="mt-1 text-xs text-red-600">{errors.date}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse <span className="text-red-500">*</span></label>
                   <select required
-                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                    value={warehouseId} onChange={e => setWarehouseId(e.target.value)}
+                    className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.warehouseId ? 'border-red-500' : 'border-gray-300'}`}
+                    value={warehouseId} onChange={e => { setWarehouseId(e.target.value); setErrors(p => ({ ...p, warehouseId: undefined })); }}
                   >
                     <option value="">Select warehouse…</option>
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                  {errors.warehouseId && <p className="mt-1 text-xs text-red-600">{errors.warehouseId}</p>}
+                </div>
+              </div>
+              {errors.lines && <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{errors.lines}</div>}
+
+              {/* Row 1b: Sale Order (optional link) */}
+              <div className="grid grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sale Order</label>
+                  <select
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                    value={orderId}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setOrderId(val);
+                      const ord = orders.find(o => String(o.id) === val);
+                      if (ord && ord.customer_id) setCustomerId(String(ord.customer_id));
+                    }}
+                  >
+                    <option value="">No linked order</option>
+                    {orders.map(o => <option key={o.id} value={o.id}>{o.number}</option>)}
                   </select>
                 </div>
               </div>
@@ -279,11 +335,12 @@ export default function SalesDeliveryForm({ delivery, onClose, onSaved }: Props)
                         </td>
                         <td className="px-3 py-1.5">
                           <input type="number" min="0" step="any"
-                            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                            className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${lineErrors[i] ? 'border-red-500' : 'border-gray-300'}`}
                             value={l.delivered_qty || ''}
                             placeholder="0"
                             onChange={e => updLine(i, { delivered_qty: Number(e.target.value), ordered_qty: Number(e.target.value) })}
                           />
+                          {lineErrors[i] && <p className="mt-1 text-xs text-red-600">{lineErrors[i]}</p>}
                         </td>
                         <td className="px-3 py-1.5 text-center">
                           <div className="flex items-center justify-center gap-2">

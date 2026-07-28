@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Receive Payments', 'RM-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = GREATEST(
        next_number,
@@ -261,7 +264,7 @@ router.post('/:id/approve', async (req, res) => {
 
     // Debit bank account (or Undeposited Funds), Credit A/R
     const { rows: arRows } = await client.query(
-      `SELECT * FROM chart_of_accounts WHERE system_name = 'accounts_receivable' LIMIT 1`
+      `SELECT * FROM chart_of_accounts WHERE system_name = 'AccountsReceivable' LIMIT 1`
     );
     if (!arRows.length) return res.status(400).json({ error: 'Accounts Receivable account not configured' });
     const arCoa = arRows[0];
@@ -269,21 +272,35 @@ router.post('/:id/approve', async (req, res) => {
     let bankCoaId = pmt.bank_coa_id;
     if (!bankCoaId) {
       const { rows: ufRows } = await client.query(
-        `SELECT id FROM chart_of_accounts WHERE system_name = 'undeposited_funds' LIMIT 1`
+        `SELECT id FROM chart_of_accounts WHERE system_name = 'UndepositedFunds' LIMIT 1`
       );
       if (ufRows.length) bankCoaId = ufRows[0].id;
     }
 
+    let bankCoa = null;
     if (bankCoaId) {
       const { rows: bankRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE id = $1`, [bankCoaId]);
       if (bankRows.length) {
-        const bankChange = bankRows[0].normal_balance === 'debit' ?  total : -total;
+        bankCoa = bankRows[0];
+        const bankChange = bankCoa.normal_balance === 'debit' ?  total : -total;
         await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [bankChange, bankCoaId]);
       }
     }
 
     const arChange = arCoa.normal_balance === 'debit' ? -total : total;
     await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [arChange, arCoa.id]);
+
+    if (bankCoa) {
+      const bankChange = bankCoa.normal_balance === 'debit' ? total : -total;
+      await postJournalEntry(client, {
+        date: pmt.date, memo: `Receive Payment ${pmt.number}`, reference: pmt.number,
+        source_type: 'ReceivePayment', source_id: pmt.id,
+        lines: [
+          changeToLine(bankCoa, bankChange, `Receive Payment ${pmt.number}`),
+          changeToLine(arCoa,   arChange,   `Receive Payment ${pmt.number}`),
+        ],
+      });
+    }
 
     // Apply allocations — update invoice paid_amount and balance_amount
     const { rows: allocations } = await client.query(
@@ -330,7 +347,7 @@ router.post('/:id/cancel', async (req, res) => {
     if (pmt.status === 'approved') {
       const total = Number(pmt.total_amount);
       const { rows: arRows } = await client.query(
-        `SELECT * FROM chart_of_accounts WHERE system_name = 'accounts_receivable' LIMIT 1`
+        `SELECT * FROM chart_of_accounts WHERE system_name = 'AccountsReceivable' LIMIT 1`
       );
       if (arRows.length) {
         const arChange = arRows[0].normal_balance === 'debit' ? total : -total;
@@ -339,7 +356,7 @@ router.post('/:id/cancel', async (req, res) => {
       let bankCoaId = pmt.bank_coa_id;
       if (!bankCoaId) {
         const { rows: ufRows } = await client.query(
-          `SELECT id FROM chart_of_accounts WHERE system_name = 'undeposited_funds' LIMIT 1`
+          `SELECT id FROM chart_of_accounts WHERE system_name = 'UndepositedFunds' LIMIT 1`
         );
         if (ufRows.length) bankCoaId = ufRows[0].id;
       }
@@ -350,6 +367,10 @@ router.post('/:id/cancel', async (req, res) => {
           await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2`, [bankChange, bankCoaId]);
         }
       }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'ReceivePayment', source_id: pmt.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Receive Payment ${pmt.number}`,
+      });
       // Reverse invoice allocations
       const { rows: allocations } = await client.query(
         'SELECT * FROM rp_allocations WHERE payment_id = $1', [req.params.id]

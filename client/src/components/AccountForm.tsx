@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Account, AccountFormData, AccountGroup } from '../types/account';
-import { createAccount, getAccountsLookup, updateAccount } from '../api/accounts';
+import { createAccount, getAccounts, updateAccount } from '../api/accounts';
+import { validateName } from '../utils/validators';
 
 interface Props {
   account: Account | null;
@@ -42,7 +43,10 @@ export default function AccountForm({ account, defaultParent, onClose, onSaved }
   const saveMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getAccountsLookup().then(setLookup).catch(() => {});
+    // Full list (not /lookup, which excludes control/parent accounts by design
+    // for transaction-line dropdowns) — this form needs the control accounts
+    // to populate "Parent Account", plus siblings to auto-suggest the next code.
+    getAccounts({ is_active: 'true' }).then(setLookup).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -79,7 +83,8 @@ export default function AccountForm({ account, defaultParent, onClose, onSaved }
     const e: typeof errors = {};
     if (!form.parent_id) e.parent_id = 'Parent account is required';
     if (!form.code.trim()) e.code = 'Code is required';
-    if (!form.name.trim()) e.name = 'Name is required';
+    const nameErr = validateName(form.name, 'Account name');
+    if (nameErr) e.name = nameErr;
     setErrors(e);
     return !Object.keys(e).length;
   }

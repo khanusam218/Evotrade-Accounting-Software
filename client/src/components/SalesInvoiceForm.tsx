@@ -8,6 +8,7 @@ import type { SalesInvoice, SalesInvoiceLine } from '../types/salesInvoice';
 import type { SalesQuotation } from '../types/salesQuotation';
 import type { SalesOrder } from '../types/salesOrder';
 import { SI_STATUS_COLORS, SI_STATUS_LABELS } from '../types/salesInvoice';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Props {
   invoice: SalesInvoice | null;
@@ -80,6 +81,8 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
   const [attachments,  setAttachments]  = useState<AttachFile[]>([]);
   const [dragOver,     setDragOver]     = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [errors, setErrors] = useState<{ customerId?: string; date?: string; dueDate?: string; lines?: string; discountPct?: string; shippingChgs?: string; received?: string }>({});
+  const [lineErrors, setLineErrors] = useState<Record<number, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -117,6 +120,8 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
     setCustomerId(String(fromQuotation.customer_id));
     setQuotationId(String(fromQuotation.id));
     getSalesQuotation(fromQuotation.id).then(q => {
+      setDiscountPct(Number(q.discount_pct ?? 0));
+      setShippingChgs(Number(q.shipping_charges ?? 0));
       if (q.lines?.length) {
         const ls = q.lines.map(l => ({ ...l } as SalesInvoiceLine));
         setLines(ls);
@@ -130,6 +135,8 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
     setCustomerId(String(fromOrder.customer_id));
     setOrderId(String(fromOrder.id));
     getSalesOrder(fromOrder.id).then(o => {
+      setDiscountPct(Number(o.discount_pct ?? 0));
+      setShippingChgs(Number(o.shipping_charges ?? 0));
       if (o.lines?.length) {
         const ls = o.lines.map(l => ({ ...l } as SalesInvoiceLine));
         setLines(ls);
@@ -171,13 +178,41 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
 
   const [saveAndNew, setSaveAndNew] = useState(false);
 
+  function validate(): boolean {
+    const errs: typeof errors = {};
+    if (!customerId) errs.customerId = 'Customer is required.';
+    if (!date) errs.date = 'Date is required.';
+    if (!dueDate) errs.dueDate = 'Due date is required.';
+    else if (date && dueDate < date) errs.dueDate = 'Due date cannot be before the invoice date.';
+    const discErr = validatePercent(discountPct, 'Discount'); if (discErr) errs.discountPct = discErr;
+    const shipErr = validatePositive(shippingChgs, 'Shipping charges'); if (shipErr) errs.shippingChgs = shipErr;
+    const recvErr = validatePositive(received, 'Received amount'); if (recvErr) errs.received = recvErr;
+
+    const activeLines = lines.filter(l => l.description.trim());
+    if (activeLines.length === 0) errs.lines = 'At least one line is required.';
+
+    const lErrs: Record<number, string> = {};
+    lines.forEach((l, i) => {
+      if (!l.description.trim()) return;
+      if (!(Number(l.quantity) > 0)) lErrs[i] = 'Quantity must be greater than 0.';
+      else if (Number(l.unit_price) < 0) lErrs[i] = 'Unit price cannot be negative.';
+      else {
+        const discE = validatePercent(Number(l.discount_pct), 'Discount'); if (discE) lErrs[i] = discE;
+      }
+    });
+    setLineErrors(lErrs);
+    if (Object.keys(lErrs).length > 0 && !errs.lines) errs.lines = 'Fix the highlighted line item errors below.';
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const andNew = saveAndNew;
     setSaveAndNew(false);
     setError(null);
-    if (!customerId) { setError('Customer is required'); return; }
-    if (!lines.some(l => l.description.trim())) { setError('At least one line is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
@@ -204,6 +239,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
         setShippingAddress(''); setDiscountPct(0); setShippingChgs(0);
         setRoundOff(0); setBankAccountId(''); setPayReference(''); setReceived(0);
         setLines([emptyLine()]); setLineRaws([emptyRaw()]);
+        setErrors({}); setLineErrors({});
         getNextInvoiceNumber().then(r => setNextNum(r.number)).catch(() => {});
         onSaved();
       } else {
@@ -266,10 +302,11 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
             <div className="grid grid-cols-5 gap-3">
               <div className="col-span-2">
                 <label className="label">Customer <span className="text-red-500">*</span></label>
-                <select className="input w-full" value={customerId} onChange={e => setCustomerId(e.target.value)} required>
+                <select className={`input w-full ${errors.customerId ? 'border-red-500' : ''}`} value={customerId} onChange={e => { setCustomerId(e.target.value); setErrors(p => ({ ...p, customerId: undefined })); }} required>
                   <option value="">Select customer…</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                 </select>
+                {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
               </div>
               <div>
                 <label className="label">Number <span className="text-red-500">*</span></label>
@@ -277,13 +314,16 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
               </div>
               <div>
                 <label className="label">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input w-full" value={date} onChange={e => setDate(e.target.value)} required />
+                <input type="date" className={`input w-full ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => { setDate(e.target.value); setErrors(p => ({ ...p, date: undefined })); }} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="label">Due Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input w-full" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <input type="date" className={`input w-full ${errors.dueDate ? 'border-red-500' : ''}`} value={dueDate} onChange={e => { setDueDate(e.target.value); setErrors(p => ({ ...p, dueDate: undefined })); }} required />
+                {errors.dueDate && <p className="text-xs text-red-500 mt-1">{errors.dueDate}</p>}
               </div>
             </div>
+            {errors.lines && <div className="rounded-md bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{errors.lines}</div>}
 
             {/* Row 2: From Order | From Quotation | Reference | Subject */}
             <div className="grid grid-cols-4 gap-3">
@@ -361,7 +401,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.qty ?? String(l.quantity ?? 1)}
                             onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'quantity', p2n(e.target.value) || 1, { qty: e.target.value }); }}
                             onBlur={e => { const n = p2n(e.target.value) || 1; updateLine(i, 'quantity', n, { qty: String(n) }); }}
@@ -370,7 +410,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.price ?? String(l.unit_price ?? 0)}
                             onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'unit_price', p2n(e.target.value), { price: e.target.value }); }}
                             onBlur={e => { const n = p2n(e.target.value); updateLine(i, 'unit_price', n, { price: String(n) }); }}
@@ -379,7 +419,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                         <td className="table-td">
                           <input
                             type="text" inputMode="decimal"
-                            className="input w-full text-right text-xs"
+                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.disc ?? String(l.discount_pct ?? 0)}
                             onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'discount_pct', p2n(e.target.value), { disc: e.target.value }); }}
                             onBlur={e => { const n = Math.min(100, Math.max(0, p2n(e.target.value))); updateLine(i, 'discount_pct', n, { disc: String(n) }); }}
@@ -496,15 +536,16 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                     <div className="flex items-center gap-1">
                       <input
                         type="number"
-                        className="input w-16 text-right text-xs py-1 px-2"
+                        className={`input w-16 text-right text-xs py-1 px-2 ${errors.discountPct ? 'border-red-500' : ''}`}
                         value={discountPct}
                         min="0" max="100" step="0.01"
-                        onChange={e => setDiscountPct(parseFloat(e.target.value) || 0)}
+                        onChange={e => { setDiscountPct(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, discountPct: undefined })); }}
                       />
                       <span className="text-gray-500 text-xs font-semibold">%</span>
                     </div>
                     <span className="font-mono text-red-600 flex-shrink-0">-{fmt(discAmount)}</span>
                   </div>
+                  {errors.discountPct && <p className="text-xs text-red-500 text-right">{errors.discountPct}</p>}
                   <div className="flex justify-between">
                     <span className="text-gray-600">Tax</span>
                     <span className="font-mono">{fmt(taxTotal)}</span>
@@ -513,12 +554,13 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                     <span className="text-gray-600 flex-shrink-0">Shipping Charges</span>
                     <input
                       type="number"
-                      className="input w-24 text-right text-xs py-1 px-2"
+                      className={`input w-24 text-right text-xs py-1 px-2 ${errors.shippingChgs ? 'border-red-500' : ''}`}
                       value={shippingChgs}
                       min="0" step="0.01"
-                      onChange={e => setShippingChgs(parseFloat(e.target.value) || 0)}
+                      onChange={e => { setShippingChgs(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, shippingChgs: undefined })); }}
                     />
                   </div>
+                  {errors.shippingChgs && <p className="text-xs text-red-500 text-right">{errors.shippingChgs}</p>}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-gray-600 flex-shrink-0">Round Off</span>
                     <input
@@ -560,13 +602,14 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                     />
                     <input
                       type="number"
-                      className="input w-full text-right text-xs"
+                      className={`input w-full text-right text-xs ${errors.received ? 'border-red-500' : ''}`}
                       value={received}
                       min="0" step="0.01"
                       disabled={!bankAccountId}
-                      onChange={e => setReceived(parseFloat(e.target.value) || 0)}
+                      onChange={e => { setReceived(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, received: undefined })); }}
                     />
                   </div>
+                  {errors.received && <p className="text-xs text-red-500 text-right">{errors.received}</p>}
                   <div className="border-t border-gray-300 pt-2 flex justify-between text-sm font-medium">
                     <span className="text-gray-700">Balance (PKR)</span>
                     <span className={`font-mono ${balance < 0 ? 'text-red-600' : 'text-gray-800'}`}>{fmt(balance)}</span>

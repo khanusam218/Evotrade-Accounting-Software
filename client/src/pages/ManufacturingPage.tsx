@@ -1,11 +1,14 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
+import { apiFetch } from '../api/apiFetch';
 import type { BillOfMaterials } from '../types/billOfMaterials';
 import type { WorkOrder, WOStatus } from '../types/workOrder';
 import { WO_STATUS_COLORS } from '../types/workOrder';
-import { getBOMs } from '../api/billsOfMaterials';
-import { getWorkOrders, createWorkOrder, updateWorkOrder, startWorkOrder, completeWorkOrder, cancelWorkOrder, deleteWorkOrder } from '../api/workOrders';
+import { getBOMs, deleteBOM } from '../api/billsOfMaterials';
+import BOMForm from '../components/BOMForm';
+import { getWorkOrders, getWorkOrder, createWorkOrder, updateWorkOrder, startWorkOrder, completeWorkOrder, cancelWorkOrder, deleteWorkOrder } from '../api/workOrders';
 import { getProducts } from '../api/products';
 import type { Product } from '../types/product';
+import { validatePositive } from '../utils/validators';
 
 function printWorkOrders(records: WorkOrder[]) {
   const win = window.open('', '_blank', 'width=1000,height=680');
@@ -76,12 +79,18 @@ function JOForm({ initial, onClose, onSaved }: {
   const [bomId, setBomId] = useState(String(initial?.bom_id || ''));
   const [date, setDate] = useState(initial?.date?.slice(0, 10) || new Date().toISOString().slice(0, 10));
   const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10));
-  const [plannedQty, setPlannedQty] = useState(initial?.planned_qty ?? 0);
+  const [plannedQty, setPlannedQty] = useState(Number(initial?.planned_qty ?? 0));
   const [reference, setReference] = useState('');
   const [accountExpenses, setAccountExpenses] = useState(false);
-  const [calcMethod, setCalcMethod] = useState('Method 1');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ bomId?: string; date?: string; dueDate?: string; plannedQty?: string }>({});
+
+  const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
+  const [warehouseId, setWarehouseId] = useState(String(initial?.warehouse_id || ''));
+  const [products, setProducts] = useState<Product[]>([]);
+  const [lines, setLines] = useState<{ product_id: number | null; quantity: number; qty_on_hand?: number }[]>([]);
+  const linesLoadedForEdit = useRef(false);
 
   const isNew = !initial;
   const status = initial?.status || 'draft';
@@ -89,17 +98,74 @@ function JOForm({ initial, onClose, onSaved }: {
 
   useEffect(() => {
     getBOMs({ is_active: 'true' }).then(setBoms);
+    apiFetch('/api/warehouses').then(r => r.json()).then(d => setWarehouses(Array.isArray(d) ? d : [])).catch(() => {});
+    getProducts({ limit: 500 }).then(r => setProducts(r.data)).catch(() => {});
   }, []);
+
+  // Editing an existing work order: load its persisted component lines
+  // (or the BOM-derived preview, if none were ever saved) instead of always
+  // silently re-deriving them from the currently-selected BOM.
+  useEffect(() => {
+    if (!initial) return;
+    getWorkOrder(initial.id).then(full => {
+      setWarehouseId(String(full.warehouse_id ?? ''));
+      if (full.components?.length) {
+        setLines(full.components.map(c => ({
+          product_id: c.component_product_id, quantity: Number(c.quantity),
+          qty_on_hand: c.qty_on_hand !== undefined ? Number(c.qty_on_hand) : undefined,
+        })));
+      }
+      linesLoadedForEdit.current = true;
+    }).catch(() => { linesLoadedForEdit.current = true; });
+  }, [initial]);
+
+  // Creating a new work order (or the user picks a different assembly BOM):
+  // seed the line items from the BOM's recipe scaled to the planned quantity.
+  useEffect(() => {
+    if (!isNew) return;
+    if (!selectedBom) { setLines([]); return; }
+    const factor = selectedBom.output_qty > 0 ? plannedQty / selectedBom.output_qty : 1;
+    setLines((selectedBom.components || []).map(c => ({
+      product_id: c.component_product_id,
+      quantity: Math.round(c.quantity * factor * 10000) / 10000,
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bomId, isNew]);
+
+  function updateLine(i: number, patch: Partial<{ product_id: number | null; quantity: number }>) {
+    setLines(prev => prev.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  }
+  function addLine() {
+    setLines(prev => [...prev, { product_id: null, quantity: 0 }]);
+  }
+  function removeLine(i: number) {
+    setLines(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  function validate(): boolean {
+    const e: typeof fieldErrors = {};
+    if (!bomId) e.bomId = 'Product To Assemble is required.';
+    if (!date) e.date = 'Date is required.';
+    if (!dueDate) e.dueDate = 'Due Date is required.';
+    const qtyErr = validatePositive(plannedQty, 'Quantity to produce'); if (qtyErr) e.plannedQty = qtyErr;
+    setFieldErrors(e);
+    return Object.keys(e).length === 0;
+  }
 
   async function handleSave() {
     setError('');
-    if (!bomId) { setError('Product To Assemble is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
+      const payload = {
+        bom_id: Number(bomId), date, planned_qty: plannedQty, notes: reference || null,
+        warehouse_id: warehouseId ? Number(warehouseId) : null,
+        components: lines.filter(l => l.product_id).map(l => ({ product_id: l.product_id, quantity: l.quantity })),
+      };
       if (isNew) {
-        await createWorkOrder({ bom_id: Number(bomId), date, planned_qty: plannedQty, notes: reference || null });
+        await createWorkOrder(payload);
       } else {
-        await updateWorkOrder(initial!.id, { bom_id: Number(bomId), date, planned_qty: plannedQty, notes: reference || null });
+        await updateWorkOrder(initial!.id, payload);
       }
       onSaved();
     } catch (err: unknown) {
@@ -126,19 +192,20 @@ function JOForm({ initial, onClose, onSaved }: {
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {error && <div className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-          {/* Row 1: BOM | Number | Date | Due Date | Total Cost (PKR) */}
+          {/* Row 1: BOM | Number | Date | Due Date */}
           <div className="flex gap-4 items-end">
             <div className="flex-[2]">
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 Product To Assemble <span className="text-red-500">*</span>
               </label>
               <select
-                className="w-full border-2 border-red-400 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-400"
-                value={bomId} onChange={e => setBomId(e.target.value)}
+                className={`w-full border-2 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-400 ${fieldErrors.bomId ? 'border-red-600' : 'border-red-400'}`}
+                value={bomId} onChange={e => { setBomId(e.target.value); setFieldErrors(prev => ({ ...prev, bomId: undefined })); }}
               >
                 <option value="">Type to search as…</option>
                 {boms.map(b => <option key={b.id} value={b.id}>{b.name} → {b.product_name}</option>)}
               </select>
+              {fieldErrors.bomId && <p className="text-xs text-red-500 mt-1">{fieldErrors.bomId}</p>}
             </div>
             <div className="flex-[1.5]">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Number <span className="text-red-500">*</span></label>
@@ -151,18 +218,15 @@ function JOForm({ initial, onClose, onSaved }: {
             </div>
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Date <span className="text-red-500">*</span></label>
-              <input type="date" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={date} onChange={e => setDate(e.target.value)} />
+              <input type="date" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.date ? 'border-red-500' : 'border-gray-300'}`}
+                value={date} onChange={e => { setDate(e.target.value); setFieldErrors(prev => ({ ...prev, date: undefined })); }} />
+              {fieldErrors.date && <p className="text-xs text-red-500 mt-1">{fieldErrors.date}</p>}
             </div>
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Due Date <span className="text-red-500">*</span></label>
-              <input type="date" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={dueDate} onChange={e => setDueDate(e.target.value)} />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Total Cost (PKR)</label>
-              <input type="text" readOnly value="0.00"
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-gray-100 text-gray-500 text-right focus:outline-none" />
+              <input type="date" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.dueDate ? 'border-red-500' : 'border-gray-300'}`}
+                value={dueDate} onChange={e => { setDueDate(e.target.value); setFieldErrors(prev => ({ ...prev, dueDate: undefined })); }} />
+              {fieldErrors.dueDate && <p className="text-xs text-red-500 mt-1">{fieldErrors.dueDate}</p>}
             </div>
           </div>
 
@@ -171,8 +235,9 @@ function JOForm({ initial, onClose, onSaved }: {
             <div className="w-48">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Quantity To Produce</label>
               <input type="number" min="0" step="any"
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                value={plannedQty} onChange={e => setPlannedQty(Number(e.target.value))} />
+                className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.plannedQty ? 'border-red-500' : 'border-gray-300'}`}
+                value={plannedQty} onChange={e => { setPlannedQty(Number(e.target.value)); setFieldErrors(prev => ({ ...prev, plannedQty: undefined })); }} />
+              {fieldErrors.plannedQty && <p className="text-xs text-red-500 mt-1">{fieldErrors.plannedQty}</p>}
             </div>
             <div className="w-64">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Reference</label>
@@ -180,71 +245,68 @@ function JOForm({ initial, onClose, onSaved }: {
                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
                 value={reference} onChange={e => setReference(e.target.value)} placeholder="Reference" />
             </div>
+            <div className="w-56">
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Warehouse</label>
+              <select
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
+                <option value="">No warehouse (no stock movement)</option>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </div>
           </div>
 
           {/* Input (Consumption) */}
           <div>
-            <h3 className="text-base font-semibold text-gray-800 mb-2">Input (Consumption)</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-base font-semibold text-gray-800">Input (Consumption)</h3>
+              <button type="button" onClick={addLine}
+                className="text-xs text-green-600 hover:text-green-800 font-medium">+ Add Line</button>
+            </div>
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-100">
                   <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Product</th>
-                  <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 w-28">Batch</th>
                   <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-32">Stock Available</th>
                   <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-28">Quantity</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-20">Cost</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-20">Amount</th>
                   <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 w-16">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedBom?.components?.length ? selectedBom.components.map((comp, i) => (
+                {lines.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="border border-gray-300 px-3 py-3 text-center text-gray-400">
+                      {selectedBom ? 'This BOM has no components.' : 'Select a product to assemble first.'}
+                    </td>
+                  </tr>
+                ) : lines.map((line, i) => (
                   <tr key={i}>
                     <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex items-center justify-between border border-gray-300 rounded px-2 py-1 bg-white gap-1">
-                        <span className="text-gray-700 truncate">{comp.component_name || `Product #${comp.component_product_id}`}</span>
-                        <span className="text-gray-400 shrink-0">▼</span>
-                      </div>
+                      <select
+                        className="w-full text-xs border border-gray-300 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        value={line.product_id ?? ''}
+                        onChange={e => updateLine(i, { product_id: e.target.value ? Number(e.target.value) : null })}
+                      >
+                        <option value="">Type to search product</option>
+                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
                     </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50"></td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500"></td>
+                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500">
+                      {line.qty_on_hand !== undefined ? line.qty_on_hand : '—'}
+                    </td>
                     <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" step="any" defaultValue={comp.quantity}
+                      <input type="number" step="any" value={line.quantity}
+                        onChange={e => updateLine(i, { quantity: Number(e.target.value) })}
                         className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                     </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500"></td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500">0.00</td>
                     <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex justify-center gap-2">
-                        <button type="button" className="text-gray-500 hover:text-green-700 font-bold text-base leading-none">✓</button>
-                        <button type="button" className="text-gray-500 hover:text-red-600 font-bold text-base leading-none">×</button>
+                      <div className="flex justify-center">
+                        <button type="button" onClick={() => removeLine(i)} title="Remove line"
+                          className="text-gray-500 hover:text-red-600 font-bold text-base leading-none">×</button>
                       </div>
                     </td>
                   </tr>
-                )) : (
-                  <tr>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex items-center justify-between border border-gray-300 rounded px-2 py-1 bg-white gap-1">
-                        <span className="text-gray-400">Type to search product</span>
-                        <span className="text-gray-400 shrink-0">▼</span>
-                      </div>
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50"></td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50"></td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" defaultValue={0}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50"></td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500">0.00</td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex justify-center gap-2">
-                        <button type="button" className="text-gray-500 hover:text-green-700 font-bold text-base leading-none">✓</button>
-                        <button type="button" className="text-gray-500 hover:text-red-600 font-bold text-base leading-none">×</button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
@@ -301,25 +363,6 @@ function JOForm({ initial, onClose, onSaved }: {
             )}
           </div>
 
-          {/* Calculation Method + Total Production Cost — between Account Expenses and Output */}
-          <div className="flex items-end gap-8">
-            <div>
-              <p className="text-sm font-semibold text-gray-800 mb-1">Calculation Method</p>
-              <p className="text-orange-500 text-xs mb-1">(Cannot be changed once joborder saved.)</p>
-              <select
-                className="w-44 border border-green-500 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                value={calcMethod} onChange={e => setCalcMethod(e.target.value)}>
-                <option>Method 1</option>
-                <option>Method 2</option>
-                <option>Standard</option>
-              </select>
-            </div>
-            <div className="pb-1">
-              <p className="text-base font-semibold text-gray-800">Total Production Cost:</p>
-              <p className="text-xl font-semibold text-gray-800">0.00</p>
-            </div>
-          </div>
-
           {/* Output (Production) */}
           <div>
             <h3 className="text-base font-semibold text-gray-800 mb-2">Output (Production)</h3>
@@ -327,78 +370,27 @@ function JOForm({ initial, onClose, onSaved }: {
               <thead>
                 <tr className="bg-gray-100">
                   <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Product</th>
-                  <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 w-24">Batch</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-28">Quantity</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-20">Cost</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-20">Cost %</th>
-                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-20">Amount</th>
-                  <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700 w-16">Action</th>
+                  <th className="border border-gray-300 px-3 py-2 text-right font-semibold text-gray-700 w-28">Planned Qty</th>
                 </tr>
               </thead>
               <tbody>
                 {selectedBom ? (
                   <tr>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex items-center justify-between border border-gray-300 rounded px-2 py-1 bg-white gap-1">
-                        <span className="text-gray-700 truncate">{selectedBom.product_name || `Product #${selectedBom.product_id}`}</span>
-                        <span className="text-gray-400 shrink-0">▼</span>
-                      </div>
+                    <td className="border border-gray-300 px-2 py-1.5 text-gray-700">
+                      {selectedBom.product_name || `Product #${selectedBom.product_id}`}
                     </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="text" className="w-full text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" step="any" defaultValue={plannedQty}
-                        className="w-full text-right text-xs border-2 border-red-400 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-red-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" step="any" defaultValue={0}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" step="any" defaultValue={0}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500">0.00</td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex justify-center gap-2">
-                        <button type="button" className="text-gray-500 hover:text-green-700 font-bold text-base leading-none">✓</button>
-                        <button type="button" className="text-gray-500 hover:text-red-600 font-bold text-base leading-none">×</button>
-                      </div>
-                    </td>
+                    <td className="border border-gray-300 px-2 py-1.5 text-right text-gray-700">{plannedQty}</td>
                   </tr>
                 ) : (
                   <tr>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex items-center justify-between border border-gray-300 rounded px-2 py-1 bg-white gap-1">
-                        <span className="text-gray-400">Type to search product</span>
-                        <span className="text-gray-400 shrink-0">▼</span>
-                      </div>
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5"></td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" defaultValue={0}
-                        className="w-full text-right text-xs border-2 border-red-400 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-red-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" defaultValue={0}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" defaultValue={0}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1.5 bg-gray-50 text-right text-gray-500">0.00</td>
-                    <td className="border border-gray-300 px-2 py-1.5">
-                      <div className="flex justify-center gap-2">
-                        <button type="button" className="text-gray-500 hover:text-green-700 font-bold text-base leading-none">✓</button>
-                        <button type="button" className="text-gray-500 hover:text-red-600 font-bold text-base leading-none">×</button>
-                      </div>
+                    <td colSpan={2} className="border border-gray-300 px-3 py-3 text-center text-gray-400">
+                      Select a product to assemble first.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            <p className="text-xs text-gray-500 mt-1">Actual produced quantity is entered when you complete the job order.</p>
           </div>
 
           {/* Save / Cancel */}
@@ -418,12 +410,24 @@ function JOForm({ initial, onClose, onSaved }: {
 }
 
 function CompleteModal({ wo, onClose, onSaved }: { wo: WorkOrder; onClose: () => void; onSaved: () => void }) {
-  const [qty, setQty] = useState(wo.planned_qty);
+  const plannedQty = Number(wo.planned_qty);
+  const [qty, setQty] = useState(plannedQty);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [qtyError, setQtyError] = useState('');
+
+  function validate(): boolean {
+    const posErr = validatePositive(qty, 'Produced quantity');
+    if (posErr) { setQtyError(posErr); return false; }
+    if (qty > plannedQty) { setQtyError(`Produced quantity cannot exceed the planned quantity (${plannedQty}).`); return false; }
+    setQtyError('');
+    return true;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setError(''); setSaving(true);
+    e.preventDefault(); setError('');
+    if (!validate()) return;
+    setSaving(true);
     try { await completeWorkOrder(wo.id, qty); onSaved(); }
     catch (err: unknown) { setError(err instanceof Error ? err.message : 'Failed'); }
     finally { setSaving(false); }
@@ -437,7 +441,9 @@ function CompleteModal({ wo, onClose, onSaved }: { wo: WorkOrder; onClose: () =>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Produced Quantity</label>
-            <input type="number" min="0" step="any" className="input" value={qty} onChange={e => setQty(Number(e.target.value))} required />
+            <input type="number" min="0" step="any" className={`input ${qtyError ? 'border-red-500' : ''}`}
+              value={qty} onChange={e => { setQty(Number(e.target.value)); setQtyError(''); }} required />
+            {qtyError && <p className="text-xs text-red-500 mt-1">{qtyError}</p>}
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
@@ -454,6 +460,21 @@ export default function ManufacturingPage() {
   const [editWO, setEditWO] = useState<WorkOrder | null | undefined>(undefined);
   const [completing, setCompleting] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [showBomManager, setShowBomManager] = useState(false);
+  const [boms, setBoms] = useState<BillOfMaterials[]>([]);
+  const [bomsLoading, setBomsLoading] = useState(false);
+  const [editBom, setEditBom] = useState<BillOfMaterials | null | undefined>(undefined);
+
+  async function loadBoms() {
+    setBomsLoading(true);
+    try { setBoms(await getBOMs()); } finally { setBomsLoading(false); }
+  }
+  async function handleDeleteBom(id: number) {
+    if (!confirm('Delete this Bill of Materials?')) return;
+    try { await deleteBOM(id); loadBoms(); }
+    catch (e: unknown) { alert(e instanceof Error ? e.message : 'Failed'); }
+  }
 
   const [showFilters, setShowFilters] = useState(false);
   const emptyFilters = {
@@ -497,6 +518,64 @@ export default function ManufacturingPage() {
     <JOForm initial={editWO} onClose={() => setEditWO(undefined)} onSaved={() => { setEditWO(undefined); loadWOs(); }} />
   );
 
+  if (editBom !== undefined) return (
+    <BOMForm bom={editBom} onClose={() => setEditBom(undefined)} onSaved={() => { setEditBom(undefined); loadBoms(); }} />
+  );
+
+  if (showBomManager) return (
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">Bills of Materials</h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setEditBom(null)}
+            className="bg-green-600 text-white text-xs font-semibold px-4 py-1.5 rounded hover:bg-green-700">
+            + ADD BOM
+          </button>
+          <button onClick={() => setShowBomManager(false)}
+            className="border border-gray-300 text-gray-600 text-xs font-medium px-4 py-1.5 rounded hover:bg-gray-50">
+            ← Back to Job Orders
+          </button>
+        </div>
+      </div>
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold text-gray-700">Name</th>
+              <th className="text-left px-3 py-2 font-semibold text-gray-700">Assembled Product</th>
+              <th className="text-right px-3 py-2 font-semibold text-gray-700">Output Qty</th>
+              <th className="text-center px-3 py-2 font-semibold text-gray-700">Active</th>
+              <th className="text-right px-3 py-2 font-semibold text-gray-700">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bomsLoading ? (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">Loading…</td></tr>
+            ) : boms.length === 0 ? (
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400">No Bills of Materials yet.</td></tr>
+            ) : boms.map(b => (
+              <tr key={b.id} className="border-b border-gray-100">
+                <td className="px-3 py-2">
+                  <button onClick={() => setEditBom(b)} className="text-blue-600 hover:underline font-medium">{b.name}</button>
+                </td>
+                <td className="px-3 py-2 text-gray-600">{b.product_name || `Product #${b.product_id}`}</td>
+                <td className="px-3 py-2 text-right text-gray-600">{b.output_qty}</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`text-xs font-semibold uppercase ${b.is_active ? 'text-green-600' : 'text-gray-400'}`}>
+                    {b.is_active ? 'Yes' : 'No'}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => handleDeleteBom(b.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   let visibleWOs = [...workOrders];
   if (appliedFilters.number)    visibleWOs = visibleWOs.filter(w => w.number?.toLowerCase().includes(appliedFilters.number.toLowerCase()));
   if (appliedFilters.reference) visibleWOs = visibleWOs.filter(w => w.notes?.toLowerCase().includes(appliedFilters.reference.toLowerCase()));
@@ -505,8 +584,8 @@ export default function ManufacturingPage() {
   if (appliedFilters.quantityFrom) visibleWOs = visibleWOs.filter(w => w.planned_qty >= Number(appliedFilters.quantityFrom));
   if (appliedFilters.quantityTo)   visibleWOs = visibleWOs.filter(w => w.planned_qty <= Number(appliedFilters.quantityTo));
   visibleWOs.sort((a, b) => {
-    let av: string | number = (a as Record<string, unknown>)[sort.col] as string | number ?? '';
-    let bv: string | number = (b as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let av: string | number = (a as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let bv: string | number = (b as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
     return av < bv ? (sort.dir === 'asc' ? -1 : 1) : av > bv ? (sort.dir === 'asc' ? 1 : -1) : 0;
@@ -517,10 +596,16 @@ export default function ManufacturingPage() {
       {/* Row 1: Title (left) + ADD JOB ORDER (right) */}
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold text-gray-900">Job Orders</h1>
-        <button onClick={() => setEditWO(null)}
-          className="bg-green-600 text-white text-xs font-semibold px-4 py-1.5 rounded hover:bg-green-700">
-          + ADD JOB ORDER
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setShowBomManager(true); loadBoms(); }}
+            className="border border-gray-300 text-gray-700 text-xs font-semibold px-4 py-1.5 rounded hover:bg-gray-50">
+            Bills of Materials
+          </button>
+          <button onClick={() => setEditWO(null)}
+            className="bg-green-600 text-white text-xs font-semibold px-4 py-1.5 rounded hover:bg-green-700">
+            + ADD JOB ORDER
+          </button>
+        </div>
       </div>
 
       {/* Row 2: FILTERS (left) + PRINT | EXPORT TO EXCEL (right) */}
@@ -588,7 +673,7 @@ export default function ManufacturingPage() {
                 <td className="table-td">{wo.notes || '—'}</td>
                 <td className="table-td">{wo.product_name || wo.bom_name || '—'}</td>
                 <td className="table-td">—</td>
-                <td className="table-td text-right">{wo.planned_qty}</td>
+                <td className="table-td text-right">{Number(wo.planned_qty)}</td>
                 <td className="table-td">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_BADGE[wo.status] || WO_STATUS_COLORS[wo.status as WOStatus]}`}>
                     {STATUS_LABELS[wo.status] || wo.status}

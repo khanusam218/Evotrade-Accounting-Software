@@ -45,6 +45,8 @@ export interface PurchaseInvoice {
   gross_amount: number;
   tax_amount: number;
   discount: number;
+  shipping_charges: number;
+  round_off: number;
   net_amount: number;
   paid_amount: number;
   balance_amount: number;

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../api/axiosConfig';
 import { getCompanySettings, updateCompanySettings, getNumberSeries, updateNumberSeries } from '../api/companySettings';
 import { getButtonColor, setButtonColor } from '../theme';
+import { validateEmail, validateName, validatePercent } from '../utils/validators';
+import { PK_PROVINCES, PK_CITIES } from '../data/locations';
 
 const IMAGES_KEY = 'evotrade_company_images';
 
@@ -17,9 +19,6 @@ const EMPTY: CompanyData = {
   company_name: '', organization_type: '', slug: '', address: '', country: '',
   city: '', state: '', zip: '', email: '', contact_person: '', phone: '', fax: '', ntn: '', cnic: '',
 };
-
-const PK_PROVINCES = ['Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan', 'Gilgit-Baltistan', 'Azad Jammu & Kashmir', 'Islamabad Capital Territory'];
-const PK_CITIES = ['Karachi', 'Lahore', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan', 'Peshawar', 'Quetta', 'Hyderabad', 'Gujranwala', 'Sialkot', 'Sargodha', 'Bahawalpur', 'Sukkur', 'Larkana', 'Abbottabad', 'Gujrat', 'Sahiwal'];
 
 const PHONE_RE = /^[0-9+\-\s()]{7,20}$/;
 const ZIP_RE   = /^[A-Za-z0-9\- ]{3,10}$/;
@@ -37,6 +36,8 @@ function validateField(key: keyof CompanyData, value: string): string {
     case 'zip':   return v && !ZIP_RE.test(v)   ? 'Enter a valid zip/postal code.' : '';
     case 'city':  return v && !NAME_RE.test(v)  ? 'City should contain letters only.' : '';
     case 'state': return v && !NAME_RE.test(v)  ? 'State should contain letters only.' : '';
+    case 'email': return validateEmail(v);
+    case 'company_name': return validateName(v, 'Company name');
     default: return '';
   }
 }
@@ -69,7 +70,8 @@ function SimpleListEditor({
   }, [msg]);
 
   const add = async () => {
-    if (!newName.trim()) return;
+    const nameErr = validateName(newName, `${title} name`);
+    if (nameErr) { setMsg({ type: 'err', text: nameErr }); return; }
     const payload: Record<string, string> = { name: newName, ...newExtras };
     try {
       await api.post(`/${endpoint}`, payload);
@@ -89,7 +91,9 @@ function SimpleListEditor({
   };
 
   const saveEdit = async () => {
-    if (!editId || !editName.trim()) return;
+    if (!editId) return;
+    const nameErr = validateName(editName, `${title} name`);
+    if (nameErr) { setMsg({ type: 'err', text: nameErr }); return; }
     const payload: Record<string, string> = { name: editName, ...editExtras };
     try {
       await api.put(`/${endpoint}/${editId}`, payload);
@@ -184,7 +188,8 @@ function AdjustmentTypesTab() {
   }, [msg]);
 
   const save = async () => {
-    if (!form.name.trim()) return;
+    const nameErr = validateName(form.name, 'Adjustment type name');
+    if (nameErr) { setMsg({ type: 'err', text: nameErr }); return; }
     try {
       if (editId) {
         await api.put(`/adjustment-types/${editId}`, form);
@@ -310,7 +315,12 @@ function TaxesTab() {
   }, [msg]);
 
   const save = async () => {
-    if (!form.name.trim() || !form.abbreviation.trim() || form.rate === '') return;
+    const nameErr = validateName(form.name, 'Tax name');
+    if (nameErr) { setMsg({ type: 'err', text: nameErr }); return; }
+    if (!form.abbreviation.trim()) { setMsg({ type: 'err', text: 'Abbreviation is required.' }); return; }
+    if (form.rate === '') { setMsg({ type: 'err', text: 'Rate is required.' }); return; }
+    const rateErr = validatePercent(Number(form.rate), 'Rate');
+    if (rateErr) { setMsg({ type: 'err', text: rateErr }); return; }
     const payload = { ...form, rate: Number(form.rate) };
     try {
       if (editId) {
@@ -518,7 +528,7 @@ export default function SetupPage() {
   async function saveInfo(e: React.FormEvent) {
     e.preventDefault(); setInfoError(''); setInfoSaving(true); setInfoSaved(false);
 
-    const validationKeys: (keyof CompanyData)[] = ['ntn', 'cnic', 'phone', 'fax', 'zip', 'city', 'state'];
+    const validationKeys: (keyof CompanyData)[] = ['company_name', 'email', 'ntn', 'cnic', 'phone', 'fax', 'zip', 'city', 'state'];
     const errs: Partial<Record<keyof CompanyData, string>> = {};
     validationKeys.forEach(k => { const msg = validateField(k, data[k]); if (msg) errs[k] = msg; });
     setFieldErrors(errs);
@@ -537,6 +547,8 @@ export default function SetupPage() {
   }
 
   async function saveSeries(s: Series) {
+    if (s.next_number < 1) { alert('Next number must be a positive value.'); return; }
+    if (s.padding < 1) { alert('Padding must be a positive value.'); return; }
     try { await updateNumberSeries(s.prefix, { next_number: s.next_number, padding: s.padding }); }
     catch (err: unknown) { alert(err instanceof Error ? err.message : 'Save failed'); }
   }
@@ -653,8 +665,9 @@ export default function SetupPage() {
 
               <div>
                 <label className={labelCls}>Company Name <span className="text-red-500">*</span></label>
-                <input type="text" placeholder="Company Name" className={inputCls}
-                  value={data.company_name} onChange={e => setData({ ...data, company_name: e.target.value })} />
+                <input type="text" placeholder="Company Name" className={`${inputCls} ${fieldErrors.company_name ? 'border-red-500' : ''}`}
+                  value={data.company_name} onChange={e => setField('company_name', e.target.value)} />
+                {fieldErrors.company_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.company_name}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -728,8 +741,9 @@ export default function SetupPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Email</label>
-                  <input type="email" placeholder="Email" className={inputCls}
-                    value={data.email} onChange={e => setData({ ...data, email: e.target.value })} />
+                  <input type="email" placeholder="Email" className={`${inputCls} ${fieldErrors.email ? 'border-red-500' : ''}`}
+                    value={data.email} onChange={e => setField('email', e.target.value)} />
+                  {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
                 </div>
                 <div>
                   <label className={labelCls}>Contact Person</label>

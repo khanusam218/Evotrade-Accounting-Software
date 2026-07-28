@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Purchase Settlements', 'PS-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Purchase Settlements'
@@ -165,7 +168,7 @@ router.post('/:id/approve', async (req, res) => {
     const ps = rows[0];
     const total = Number(ps.total_amount);
 
-    const { rows: apRows }   = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+    const { rows: apRows }   = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
     if (!apRows.length) return res.status(400).json({ error: 'Accounts Payable account not found' });
     const { rows: acctRows } = await client.query('SELECT * FROM chart_of_accounts WHERE id=$1', [ps.account_id]);
     if (!acctRows.length) return res.status(400).json({ error: 'Settlement account not found' });
@@ -175,6 +178,15 @@ router.post('/:id/approve', async (req, res) => {
     const acctChange = acctRows[0].normal_balance === 'debit'  ? -total :  total;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange,   apRows[0].id]);
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [acctChange, ps.account_id]);
+
+    await postJournalEntry(client, {
+      date: ps.date, memo: `Purchase Settlement ${ps.number}`, reference: ps.number,
+      source_type: 'PurchaseSettlement', source_id: ps.id,
+      lines: [
+        changeToLine(apRows[0],   apChange,   `Purchase Settlement ${ps.number}`),
+        changeToLine(acctRows[0], acctChange, `Purchase Settlement ${ps.number}`),
+      ],
+    });
 
     const { rows: lines } = await client.query('SELECT * FROM purchase_settlement_lines WHERE settlement_id=$1', [ps.id]);
     for (const line of lines) {
@@ -207,7 +219,7 @@ router.post('/:id/cancel', async (req, res) => {
 
     if (ps.status === 'approved') {
       const total = Number(ps.total_amount);
-      const { rows: apRows }   = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+      const { rows: apRows }   = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
       const { rows: acctRows } = await client.query('SELECT * FROM chart_of_accounts WHERE id=$1', [ps.account_id]);
       if (apRows.length && acctRows.length) {
         const apChange   = apRows[0].normal_balance   === 'credit' ?  total : -total;
@@ -215,6 +227,10 @@ router.post('/:id/cancel', async (req, res) => {
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange,   apRows[0].id]);
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [acctChange, ps.account_id]);
       }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'PurchaseSettlement', source_id: ps.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Purchase Settlement ${ps.number}`,
+      });
       const { rows: lines } = await client.query('SELECT * FROM purchase_settlement_lines WHERE settlement_id=$1', [ps.id]);
       for (const line of lines) {
         const amt = Number(line.amount);

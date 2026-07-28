@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getCompanySettings } from '../api/companySettings';
+import { getCompanySettings, updateCompanySettings } from '../api/companySettings';
+import { validatePositive } from '../utils/validators';
 
 const TEMPLATES_KEY = 'evotrade_printing_templates_v2';
 const IMAGES_KEY    = 'evotrade_company_images';
@@ -16,9 +17,18 @@ export default function SettingsPage() {
   const [coInfo,       setCoInfo]       = useState<Record<string,string>>({});
   const [coLogo,       setCoLogo]       = useState<string|null>(null);
 
+  // Currency & Account settings (persisted via company_settings)
+  const [homeCurrency,        setHomeCurrency]        = useState('');
+  const [multiCurrency,       setMultiCurrency]       = useState(false);
+  const [currencyDisplay,     setCurrencyDisplay]     = useState<'symbol' | 'code'>('code');
+  const [decimalPlaces,       setDecimalPlaces]       = useState('2');
+  const [fiscalYearStart,     setFiscalYearStart]     = useState('');
+  const [enableNarration,     setEnableNarration]     = useState(false);
+  const [reduceCostOnPurchaseDiscount, setReduceCostOnPurchaseDiscount] = useState(false);
+  const [reduceSaleOnSaleDiscount,     setReduceSaleOnSaleDiscount]     = useState(false);
+
   // Printing Templates state
   const [activeTemplateTab, setActiveTemplateTab] = useState('Sale Invoice');
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [showTemplateCustomizer, setShowTemplateCustomizer] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<{name: string; type: string} | null>(null);
@@ -30,6 +40,7 @@ export default function SettingsPage() {
   const [loyaltyExpenseAccount, setLoyaltyExpenseAccount] = useState('');
   const [loyaltyCustomerCategories, setLoyaltyCustomerCategories] = useState('');
   const [loyaltyCalculation, setLoyaltyCalculation] = useState<'ceiling' | 'floor' | 'round'>('ceiling');
+  const [loyaltyErrors, setLoyaltyErrors] = useState<Record<string, string>>({});
   const [templates, setTemplates] = useState<Record<string, Array<{id: string; name: string; type: 'default' | 'custom'; active: boolean}>>>({
     'Sale Quotation': [
       { id: 'sq-default', name: 'Default', type: 'default', active: true },
@@ -109,7 +120,17 @@ export default function SettingsPage() {
         });
       } catch {}
     }
-    getCompanySettings().then(setCoInfo).catch(() => {});
+    getCompanySettings().then(d => {
+      setCoInfo(d);
+      setHomeCurrency(d.home_currency ?? '');
+      setMultiCurrency(d.multi_currency === 'true');
+      setCurrencyDisplay(d.currency_display === 'symbol' ? 'symbol' : 'code');
+      setDecimalPlaces(d.decimal_places ?? '2');
+      setFiscalYearStart(d.fiscal_year_start ?? '');
+      setEnableNarration(d.enable_narration === 'true');
+      setReduceCostOnPurchaseDiscount(d.reduce_cost_on_purchase_discount === 'true');
+      setReduceSaleOnSaleDiscount(d.reduce_sale_on_sale_discount === 'true');
+    }).catch(() => {});
     try {
       const imgs = JSON.parse(localStorage.getItem(IMAGES_KEY) || '{}');
       if (imgs.profile) setCoLogo(imgs.profile);
@@ -453,7 +474,6 @@ export default function SettingsPage() {
 
   // API Keys state
   const [apiKeySearch, setApiKeySearch] = useState('');
-  const [visibleApiKeys, setVisibleApiKeys] = useState<Set<number>>(new Set());
   const [apiKeys, setApiKeys] = useState([
     { id: 1, name: 'whatsapp', key: '4ab37fd641a747ea84f575099cec7fe5', secret: '38Fcs4baSAbfJ4EC2AG4MXeW5KkkgP8AdjPGgSfBSPkho9mNNSi9ECcfNju2byFMCMquokfkcJWBNE7VBxf', status: 'Active', enabled: true },
   ]);
@@ -492,6 +512,28 @@ export default function SettingsPage() {
   };
 
   const handleSave = () => {
+    if (activeTab === 'settings') {
+      updateCompanySettings({
+        home_currency: homeCurrency,
+        multi_currency: String(multiCurrency),
+        currency_display: currencyDisplay,
+        decimal_places: decimalPlaces,
+        fiscal_year_start: fiscalYearStart,
+        enable_narration: String(enableNarration),
+        reduce_cost_on_purchase_discount: String(reduceCostOnPurchaseDiscount),
+        reduce_sale_on_sale_discount: String(reduceSaleOnSaleDiscount),
+      }).then(setCoInfo).catch(() => showToast('Failed to save settings.', 'error'));
+    }
+    if (activeTab === 'program' && loyaltyEnabled) {
+      const errs: Record<string, string> = {};
+      const earnErr = validatePositive(Number(loyaltyEarnAmount || 0), 'Earn amount');
+      if (!loyaltyEarnAmount.trim() || earnErr) errs.earn = !loyaltyEarnAmount.trim() ? 'Earn amount is required.' : earnErr;
+      const redeemErr = validatePositive(Number(loyaltyRedeemAmount || 0), 'Redeem amount');
+      if (!loyaltyRedeemAmount.trim() || redeemErr) errs.redeem = !loyaltyRedeemAmount.trim() ? 'Redeem amount is required.' : redeemErr;
+      if (!loyaltyExpenseAccount.trim()) errs.expenseAccount = 'Expense account is required.';
+      setLoyaltyErrors(errs);
+      if (Object.keys(errs).length > 0) { showToast('Please fix the highlighted fields before saving.', 'error'); return; }
+    }
     localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
     showToast('Settings saved successfully.');
   };
@@ -935,7 +977,7 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <div>
                     <label className={labelCls}>Home Currency</label>
-                    <select className={inputCls}>
+                    <select className={inputCls} value={homeCurrency} onChange={e => setHomeCurrency(e.target.value)}>
                       <option value="">-Choose-</option>
                       <option value="pkr">Pakistani Rupee</option>
                       <option value="usd">US Dollar</option>
@@ -944,25 +986,30 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-300" />
+                      <input type="checkbox" className="rounded border-gray-300" checked={multiCurrency}
+                        disabled={multiCurrency}
+                        onChange={e => setMultiCurrency(e.target.checked)} />
                       <span className="text-sm text-gray-700">Allow <span className="font-semibold">Multi Currency</span> <span className="text-orange-500 text-xs">(Cannot be changed once saved)</span></span>
                     </label>
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="currency_display" className="border-gray-300" />
+                      <input type="radio" name="currency_display" className="border-gray-300"
+                        checked={currencyDisplay === 'symbol'} onChange={() => setCurrencyDisplay('symbol')} />
                       <span className="text-sm text-gray-700">Display Currency Symbol (Rs)</span>
                     </label>
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="currency_display" defaultChecked className="border-gray-300" />
+                      <input type="radio" name="currency_display" className="border-gray-300"
+                        checked={currencyDisplay === 'code'} onChange={() => setCurrencyDisplay('code')} />
                       <span className="text-sm text-gray-700">Display Currency Code (PKR)</span>
                     </label>
                   </div>
                   <div>
                     <label className={labelCls}>Decimal Place Limit (Up To 4)</label>
-                    <input type="number" min="0" max="4" defaultValue="2" className={inputCls} />
+                    <input type="number" min="0" max="4" className={inputCls} value={decimalPlaces}
+                      onChange={e => setDecimalPlaces(e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -972,7 +1019,7 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <div>
                     <label className={labelCls}>Financial Year Start</label>
-                    <select className={inputCls}>
+                    <select className={inputCls} value={fiscalYearStart} onChange={e => setFiscalYearStart(e.target.value)}>
                       <option value="">-Choose-</option>
                       <option value="january">January</option>
                       <option value="july">July</option>
@@ -981,19 +1028,22 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-300" />
+                      <input type="checkbox" className="rounded border-gray-300" checked={enableNarration}
+                        onChange={e => setEnableNarration(e.target.checked)} />
                       <span className="text-sm text-gray-700">Enable <span className="font-semibold">Narration</span></span>
                     </label>
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-300" />
+                      <input type="checkbox" className="rounded border-gray-300" checked={reduceCostOnPurchaseDiscount}
+                        onChange={e => setReduceCostOnPurchaseDiscount(e.target.checked)} />
                       <span className="text-sm text-gray-700">Reduce Cost on <span className="font-semibold">Purchase Discount</span> (By Default)</span>
                     </label>
                   </div>
                   <div>
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="rounded border-gray-300" />
+                      <input type="checkbox" className="rounded border-gray-300" checked={reduceSaleOnSaleDiscount}
+                        onChange={e => setReduceSaleOnSaleDiscount(e.target.checked)} />
                       <span className="text-sm text-gray-700">Reduce Sale on <span className="font-semibold">Sale Discount</span> (By Default)</span>
                     </label>
                   </div>
@@ -1886,7 +1936,7 @@ export default function SettingsPage() {
                               setShowApiKeyModal(true);
                             }}
                           >
-                            {visibleApiKeys.has(api.id) ? api.key : '••••••••••••••••••••••••••'}
+                            {'••••••••••••••••••••••••••'}
                           </td>
                           <td className="px-6 py-3">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -2067,7 +2117,7 @@ export default function SettingsPage() {
                     <p className={`text-xs font-semibold mb-4 ${template.active?'text-green-600':'text-gray-400'}`}>{template.active?'Selected (Active)':'Inactive'}</p>
                     <div className="flex gap-2">
                       {template.type === 'custom' && (
-                        <button onClick={() => { setSelectedTemplate(template.id); setShowTemplateCustomizer(true); }}
+                        <button onClick={() => setShowTemplateCustomizer(true)}
                           className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded text-sm font-bold transition-colors">
                           CUSTOMIZE
                         </button>
@@ -2267,11 +2317,12 @@ export default function SettingsPage() {
                           min="0"
                           placeholder=""
                           value={loyaltyEarnAmount}
-                          onChange={e => setLoyaltyEarnAmount(e.target.value)}
-                          className="flex-1 border border-gray-300 rounded-l px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                          onChange={e => { setLoyaltyEarnAmount(e.target.value); setLoyaltyErrors(er => ({ ...er, earn: '' })); }}
+                          className={`flex-1 border rounded-l px-3 py-2 text-sm focus:outline-none focus:border-green-500 ${loyaltyErrors.earn ? 'border-red-500' : 'border-gray-300'}`}
                         />
                         <span className="border border-l-0 border-gray-300 rounded-r px-3 py-2 text-sm bg-gray-50 text-gray-600 flex items-center">PKR</span>
                       </div>
+                      {loyaltyErrors.earn && <p className="text-xs text-red-500 mt-1">{loyaltyErrors.earn}</p>}
                     </div>
                     <div>
                       <label className={labelCls}>
@@ -2283,11 +2334,12 @@ export default function SettingsPage() {
                           min="0"
                           placeholder=""
                           value={loyaltyRedeemAmount}
-                          onChange={e => setLoyaltyRedeemAmount(e.target.value)}
-                          className="flex-1 border border-gray-300 rounded-l px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                          onChange={e => { setLoyaltyRedeemAmount(e.target.value); setLoyaltyErrors(er => ({ ...er, redeem: '' })); }}
+                          className={`flex-1 border rounded-l px-3 py-2 text-sm focus:outline-none focus:border-green-500 ${loyaltyErrors.redeem ? 'border-red-500' : 'border-gray-300'}`}
                         />
                         <span className="border border-l-0 border-gray-300 rounded-r px-3 py-2 text-sm bg-gray-50 text-gray-600 flex items-center">PKR</span>
                       </div>
+                      {loyaltyErrors.redeem && <p className="text-xs text-red-500 mt-1">{loyaltyErrors.redeem}</p>}
                     </div>
                   </div>
 
@@ -2302,13 +2354,14 @@ export default function SettingsPage() {
                           type="text"
                           placeholder="Type to search account"
                           value={loyaltyExpenseAccount}
-                          onChange={e => setLoyaltyExpenseAccount(e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 pr-8"
+                          onChange={e => { setLoyaltyExpenseAccount(e.target.value); setLoyaltyErrors(er => ({ ...er, expenseAccount: '' })); }}
+                          className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 pr-8 ${loyaltyErrors.expenseAccount ? 'border-red-500' : 'border-gray-300'}`}
                         />
                         <svg className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       </div>
+                      {loyaltyErrors.expenseAccount && <p className="text-xs text-red-500 mt-1">{loyaltyErrors.expenseAccount}</p>}
                     </div>
                     <div>
                       <label className={labelCls}>Customer Categories</label>

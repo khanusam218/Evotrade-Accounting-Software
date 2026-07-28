@@ -1,4 +1,4 @@
-﻿import { apiFetch } from '../api/apiFetch';
+﻿import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
 import {
   getCrmTickets, getNextTicketNumber,
@@ -8,6 +8,8 @@ import {
   CrmTicket, TicketStatus,
   TICKET_STATUSES, TICKET_STATUS_COLORS, TICKET_STATUS_LABELS, TICKET_PRIORITIES,
 } from '../types/crmTicket';
+import { validateName, validatePhone, validatePositive } from '../utils/validators';
+import SearchSelect from '../components/SearchSelect';
 
 interface Customer { id: number; print_name: string; }
 interface AttachFile { name: string; size: string; }
@@ -65,11 +67,22 @@ function TicketForm({ initial, customers, onSave, onClose }: FormProps) {
   const [actualHours, setActualHours]       = useState<number>(initial?.actual_hours ?? 0);
   const [description, setDescription]       = useState(initial?.description ?? initial?.notes ?? '');
   const [attachFiles, setAttachFiles]       = useState<AttachFile[]>([]);
+  const [fieldErrors, setFieldErrors]       = useState<Record<string, string>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<string[]>([]);
+  const [projectOptions, setProjectOptions] = useState<string[]>([]);
+
   useEffect(() => {
     if (!isEdit) getNextTicketNumber().then(d => setNextNum(d.number)).catch(() => {});
+    apiFetch('/api/crm-masters/ticket-tags').then(parseJsonOrThrow)
+      .then(d => setTagOptions((d as { name: string }[]).map(t => t.name))).catch(() => {});
+    apiFetch('/api/employees').then(parseJsonOrThrow)
+      .then(d => setEmployeeOptions((d as { name: string }[]).map(e => e.name))).catch(() => {});
+    apiFetch('/api/projects').then(parseJsonOrThrow)
+      .then(d => setProjectOptions((d as { name: string }[]).map(p => p.name))).catch(() => {});
   }, [isEdit]);
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
@@ -89,6 +102,13 @@ function TicketForm({ initial, customers, onSave, onClose }: FormProps) {
   async function handleSave() {
     setError('');
     if (!title.trim()) { setError('Title is required'); return; }
+    const errs: Record<string, string> = {};
+    const contactErr = validateName(contactName, 'Contact'); if (contactErr) errs.contactName = contactErr;
+    const phoneErr = validatePhone(phone); if (phoneErr) errs.phone = phoneErr;
+    const estErr = validatePositive(estimatedHours, 'Estimated hours'); if (estErr) errs.estimatedHours = estErr;
+    const actErr = validatePositive(actualHours, 'Actual hours'); if (actErr) errs.actualHours = actErr;
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true);
     try {
       await onSave({
@@ -189,31 +209,21 @@ function TicketForm({ initial, customers, onSave, onClose }: FormProps) {
           <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Contact <span className="text-red-500">*</span></label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <input type="text" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" placeholder="Type to search contact" value={contactName} onChange={e => setContactName(e.target.value)} />
-                <span className="px-2 text-gray-400"><ChevronDown /></span>
-              </div>
+              <SearchSelect value={contactName} onChange={setContactName} options={customers.map(c => c.print_name)}
+                placeholder="Type contact person name" hasError={!!fieldErrors.contactName} />
+              {fieldErrors.contactName && <p className="text-xs text-red-500 mt-1">{fieldErrors.contactName}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Project</label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <input type="text" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" placeholder="Type to search project" value={project} onChange={e => setProject(e.target.value)} />
-                <span className="px-2 text-gray-400"><ChevronDown /></span>
-              </div>
+              <SearchSelect value={project} onChange={setProject} options={projectOptions} placeholder="Type to search project" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tag</label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <input type="text" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" placeholder="Type to search Tag" value={tag} onChange={e => setTag(e.target.value)} />
-                <span className="px-2 text-gray-400"><ChevronDown /></span>
-              </div>
+              <SearchSelect value={tag} onChange={setTag} options={tagOptions} placeholder="Type to search tag" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Assigned To</label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <input type="text" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" placeholder="Type to search employee" value={assignedTo} onChange={e => setAssignedTo(e.target.value)} />
-                <span className="px-2 text-gray-400"><ChevronDown /></span>
-              </div>
+              <SearchSelect value={assignedTo} onChange={setAssignedTo} options={employeeOptions} placeholder="Type to search employee" />
             </div>
           </div>
 
@@ -227,11 +237,13 @@ function TicketForm({ initial, customers, onSave, onClose }: FormProps) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Estimated Hours</label>
-              <input type="number" min={0} step="0.5" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={estimatedHours} onChange={e => setEstimatedHours(Number(e.target.value))} />
+              <input type="number" min={0} step="0.5" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.estimatedHours ? 'border-red-500' : 'border-gray-300'}`} value={estimatedHours} onChange={e => setEstimatedHours(Number(e.target.value))} />
+              {fieldErrors.estimatedHours && <p className="text-xs text-red-500 mt-1">{fieldErrors.estimatedHours}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Actual Hours</label>
-              <input type="number" min={0} step="0.5" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={actualHours} onChange={e => setActualHours(Number(e.target.value))} />
+              <input type="number" min={0} step="0.5" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.actualHours ? 'border-red-500' : 'border-gray-300'}`} value={actualHours} onChange={e => setActualHours(Number(e.target.value))} />
+              {fieldErrors.actualHours && <p className="text-xs text-red-500 mt-1">{fieldErrors.actualHours}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Customer</label>
@@ -246,7 +258,8 @@ function TicketForm({ initial, customers, onSave, onClose }: FormProps) {
           <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Phone</label>
-              <input type="text" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400" placeholder="Phone number" value={phone} onChange={e => setPhone(e.target.value)} />
+              <input type="text" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.phone ? 'border-red-500' : 'border-gray-300'}`} placeholder="Phone number" value={phone} onChange={e => setPhone(e.target.value)} />
+              {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">City</label>

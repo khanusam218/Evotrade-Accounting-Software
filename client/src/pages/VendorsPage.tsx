@@ -220,10 +220,12 @@ export default function VendorsPage() {
 
   if (showForm) return (
         <VendorForm
+      key={editTarget ? editTarget.id : 'new'}
       vendor={editTarget}
       onClose={() => { setShowForm(false); setEditTarget(null); }}
       onSaved={handleFormSaved}
       onRefresh={fetchVendors}
+      onSavedAndNew={() => setEditTarget(null)}
     />
   );
 

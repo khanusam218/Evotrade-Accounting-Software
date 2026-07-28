@@ -56,6 +56,9 @@ export interface CustomerFormData {
   state_province: string;
   country: string;
   zip_code: string;
+  profile_image?: string | null;
+  longitude?: string;
+  latitude?: string;
 }
 
 export interface CustomersResponse {

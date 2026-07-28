@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../api/apiFetch';
 import { getCounters, createCounter, updateCounter, deleteCounter } from '../api/pos';
 import type { POSCounter } from '../types/pos';
+import { validateName } from '../utils/validators';
 
 interface Warehouse    { id: number; name: string; }
 interface Account      { id: number; name: string; }
@@ -77,7 +78,11 @@ function CounterDetail({ initial, warehouses, accounts, numberSeries, onSave, on
   const set = (patch: Partial<FormState>) => setForm(f => ({ ...f, ...patch }));
 
   async function doSave(mode: 'new' | 'close') {
-    if (!form.name.trim()) { setError('Checkout Counter Name is required'); return; }
+    const nameErr = validateName(form.name, 'Checkout Counter Name');
+    if (nameErr) { setError(nameErr); return; }
+    if (!form.warehouse_id) { setError('Warehouse is required'); return; }
+    if (!form.cash_account_id) { setError('Cash Account is required'); return; }
+    if (!form.sale_order_series_id) { setError('Sale Order Series is required'); return; }
     setSaving(true); setError('');
     try {
       await onSave(toPayload(form), mode);

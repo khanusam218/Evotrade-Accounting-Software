@@ -8,6 +8,7 @@ import {
   createOtherCollection, getNextOCNumber, updateOtherCollection,
 } from '../api/otherCollections';
 import { getOtherCollection } from '../api/otherCollections';
+import { validateName } from '../utils/validators';
 
 interface CollectionLine {
   mode: string;
@@ -179,7 +180,7 @@ export default function OtherCollectionForm({ record, onClose, onSaved }: Props)
   function validate() {
     const e: Record<string, string> = {};
     if (!date)                e.date    = 'Date is required';
-    if (!contactName.trim())  e.contact = 'Contact is required';
+    const contactErr = validateName(contactName, 'Contact'); if (contactErr) e.contact = contactErr;
     if (!bankAccountId)       e.bank    = 'Account is required';
     const validLines = lines.filter((l) => l.accountId && parseFloat(l.amount || '0') > 0);
     if (!validLines.length)   e.lines   = 'At least one line with account and amount is required';

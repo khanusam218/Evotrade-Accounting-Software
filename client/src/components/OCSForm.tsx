@@ -3,6 +3,7 @@ import {
   createOCSSettlement, getNextOCSNumber, getOCSSettlement, updateOCSSettlement,
 } from '../api/ocsSettlements';
 import type { OCSSettlement } from '../types/ocsSettlement';
+import { validateName } from '../utils/validators';
 
 interface ReceivableLine {
   description: string;
@@ -132,7 +133,7 @@ export default function OCSForm({ settlement, onClose, onSaved }: Props) {
 
   function validate() {
     const e: Record<string, string> = {};
-    if (!contactName.trim()) e.contactName = 'Required';
+    const contactErr = validateName(contactName, 'Contact'); if (contactErr) e.contactName = contactErr;
     if (!date) e.date = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;

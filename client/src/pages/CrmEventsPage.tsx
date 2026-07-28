@@ -1,7 +1,9 @@
-﻿import { apiFetch } from '../api/apiFetch';
+﻿import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
 import { getCrmEvents, getNextEventNumber, createCrmEvent, updateCrmEvent, deleteCrmEvent } from '../api/crmEvents';
 import { CrmEvent, EventStatus, EVENT_TYPES, EVENT_PRIORITIES, EVENT_SOURCES } from '../types/crmEvent';
+import { validateName, validatePhone } from '../utils/validators';
+import SearchSelect from '../components/SearchSelect';
 
 interface Customer { id: number; print_name: string; }
 
@@ -112,11 +114,15 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
   const [showStatus, setShowStatus]   = useState(false);
   const [priority, setPriority]       = useState(initial?.priority ?? 'Not Set');
   const [showPriority, setShowPriority] = useState(false);
-  const [location, setLocation]       = useState(initial?.location ?? '');
+  const [contactName, setContactName] = useState(initial?.contact_name ?? '');
+  const [phone, setPhone]             = useState(initial?.phone ?? '');
+  const [phone2, setPhone2]           = useState(initial?.phone_2 ?? '');
+  const [city, setCity]               = useState(initial?.city ?? '');
   const [source, setSource]           = useState(initial?.source ?? '');
   const [description, setDescription] = useState(initial?.description ?? initial?.notes ?? '');
   const [assignedTo, setAssignedTo]   = useState(initial?.assigned_to ?? '');
   const [attachFiles, setAttachFiles] = useState<AttachFile[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const sp = splitDateTime(initial?.start_date);
   const ep = splitDateTime(initial?.end_date);
@@ -130,8 +136,12 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
   const priorityRef  = useRef<HTMLDivElement>(null);
   const fileRef      = useRef<HTMLInputElement>(null);
 
+  const [employeeOptions, setEmployeeOptions] = useState<string[]>([]);
+
   useEffect(() => {
     if (!isEdit) getNextEventNumber().then(d => setNextNum(d.number)).catch(() => {});
+    apiFetch('/api/employees').then(parseJsonOrThrow)
+      .then(d => setEmployeeOptions((d as { name: string }[]).map(e => e.name))).catch(() => {});
   }, [isEdit]);
 
   useEffect(() => {
@@ -165,19 +175,31 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
     const sd = joinDateTime(startDate, startTime);
     const ed = joinDateTime(endDate, endTime);
     if (ed && sd && new Date(ed) < new Date(sd)) { setError('End must be ≥ Start'); return; }
+    const errs: Record<string, string> = {};
+    if (!eventType.trim()) errs.eventType = 'Event Type is required.';
+    if (!source.trim()) errs.source = 'Source is required.';
+    const assignedErr = validateName(assignedTo, 'Assigned To'); if (assignedErr) errs.assignedTo = assignedErr;
+    if (contactName.trim()) { const err = validateName(contactName, 'Contact'); if (err) errs.contactName = err; }
+    const phoneErr = validatePhone(phone); if (phoneErr) errs.phone = phoneErr;
+    const phone2Err = validatePhone(phone2); if (phone2Err) errs.phone2 = phone2Err;
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true);
     try {
       await onSave({
         subject, event_type: eventType || undefined, status,
-        priority: priority || undefined, location: location || undefined,
+        priority: priority || undefined,
         source: source || undefined, description: description || undefined,
         start_date: sd || undefined, end_date: ed || undefined,
         assigned_to: assignedTo || undefined,
+        contact_name: contactName || undefined, phone: phone || undefined,
+        phone_2: phone2 || undefined, city: city || undefined,
       });
       if (saveAndNew) {
         setSubject(''); setEventType(''); setEventTypeSearch('');
         setStatus('planned'); setPriority('Not Set');
-        setLocation(''); setSource(''); setDescription(''); setAssignedTo('');
+        setSource(''); setDescription(''); setAssignedTo('');
+        setContactName(''); setPhone(''); setPhone2(''); setCity('');
         setAttachFiles([]);
         const today = new Date().toISOString().slice(0, 10);
         setStartDate(today); setEndDate(today); setStartTime('09:00'); setEndTime('10:00');
@@ -240,7 +262,7 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
               <label className="block text-sm text-gray-700 mb-1">Event Type <span className="text-red-500">*</span></label>
               <div className="relative">
                 <input type="text" placeholder="Type to search event type"
-                  className="w-full border border-gray-300 rounded px-3 py-1.5 pr-8 text-sm focus:outline-none focus:border-blue-400"
+                  className={`w-full border rounded px-3 py-1.5 pr-8 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.eventType ? 'border-red-500' : 'border-gray-300'}`}
                   value={eventTypeSearch}
                   onChange={e => { setEventTypeSearch(e.target.value); setEventType(e.target.value); setShowEventType(true); }}
                   onFocus={() => setShowEventType(true)} />
@@ -256,6 +278,7 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
                   </div>
                 )}
               </div>
+              {fieldErrors.eventType && <p className="text-xs text-red-500 mt-1">{fieldErrors.eventType}</p>}
             </div>
 
             {/* Status */}
@@ -360,26 +383,17 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
             </div>
           </div>
 
-          {/* Row 3: Assigned To | Location | Source */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Row 3: Assigned To | Source */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-700 mb-1">Assigned To <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <input type="text" placeholder="Type to search employee"
-                  className="w-full border border-gray-300 rounded px-3 py-1.5 pr-8 text-sm focus:outline-none focus:border-blue-400"
-                  value={assignedTo} onChange={e => setAssignedTo(e.target.value)} />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"><Chevron /></span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-700 mb-1">Location</label>
-              <input type="text" placeholder="Event location"
-                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400"
-                value={location} onChange={e => setLocation(e.target.value)} />
+              <SearchSelect value={assignedTo} onChange={setAssignedTo} options={employeeOptions}
+                placeholder="Type to search employee" hasError={!!fieldErrors.assignedTo} />
+              {fieldErrors.assignedTo && <p className="text-xs text-red-500 mt-1">{fieldErrors.assignedTo}</p>}
             </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Source <span className="text-red-500">*</span></label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${fieldErrors.source ? 'border-red-500' : 'border-gray-300'}`}>
                 <select className="flex-1 px-3 py-1.5 text-sm focus:outline-none bg-white appearance-none"
                   value={source} onChange={e => setSource(e.target.value)}>
                   <option value="">Selected source</option>
@@ -387,6 +401,38 @@ function EventForm({ initial, onSave, onClose }: FormProps) {
                 </select>
                 <span className="px-2 text-gray-400 pointer-events-none"><Chevron /></span>
               </div>
+              {fieldErrors.source && <p className="text-xs text-red-500 mt-1">{fieldErrors.source}</p>}
+            </div>
+          </div>
+
+          {/* Row 3b: Contact Person | Phone 1 | Phone 2 | City */}
+          <div className="grid grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Contact Person</label>
+              <input type="text" placeholder="Contact person"
+                className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.contactName ? 'border-red-500' : 'border-gray-300'}`}
+                value={contactName} onChange={e => setContactName(e.target.value)} />
+              {fieldErrors.contactName && <p className="text-xs text-red-500 mt-1">{fieldErrors.contactName}</p>}
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Phone 1</label>
+              <input type="text" placeholder="Phone 1"
+                className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.phone ? 'border-red-500' : 'border-gray-300'}`}
+                value={phone} onChange={e => setPhone(e.target.value)} />
+              {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Phone 2</label>
+              <input type="text" placeholder="Phone 2"
+                className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.phone2 ? 'border-red-500' : 'border-gray-300'}`}
+                value={phone2} onChange={e => setPhone2(e.target.value)} />
+              {fieldErrors.phone2 && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone2}</p>}
+            </div>
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">City</label>
+              <input type="text" placeholder="City"
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400"
+                value={city} onChange={e => setCity(e.target.value)} />
             </div>
           </div>
 

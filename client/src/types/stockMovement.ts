@@ -5,7 +5,7 @@ export interface StockMovementLine {
   product_id: number;
   product_name?: string;
   quantity: number;
-  notes?: string;
+  notes?: string | null;
 }
 
 export interface StockMovement {
@@ -16,8 +16,8 @@ export interface StockMovement {
   to_warehouse_id: number;
   from_warehouse_name?: string;
   to_warehouse_name?: string;
-  reference?: string;
-  notes?: string;
+  reference?: string | null;
+  notes?: string | null;
   status: SMStatus;
   lines?: StockMovementLine[];
   created_at: string;

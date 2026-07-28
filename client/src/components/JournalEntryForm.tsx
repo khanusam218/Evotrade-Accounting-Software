@@ -6,6 +6,7 @@ import { getAccountsLookup } from '../api/accounts';
 import { createJournalEntry, updateJournalEntry } from '../api/journalEntries';
 import { getCustomers } from '../api/customers';
 import { getVendors } from '../api/vendors';
+import { validatePositive } from '../utils/validators';
 
 interface Props {
   entry: JournalEntry | null;
@@ -51,14 +52,14 @@ export default function JournalEntryForm({ entry, onClose, onSaved }: Props) {
   useEffect(() => {
     getAccountsLookup().then(setAccounts).catch(() => {});
     Promise.all([
-      getCustomers({ page: 1, limit: 1000 }).catch(() => ({ data: [] as { id: number; name: string }[] })),
-      getVendors({   page: 1, limit: 1000 }).catch(() => ({ data: [] as { id: number; name: string }[] })),
+      getCustomers({ page: 1, limit: 1000 }).catch(() => ({ data: [] as { id: number; print_name: string }[] })),
+      getVendors({   page: 1, limit: 1000 }).catch(() => ({ data: [] as { id: number; print_name: string }[] })),
     ]).then(([cRes, vRes]) => {
-      const cData = (cRes as { data: { id: number; name: string }[] }).data ?? [];
-      const vData = (vRes as { data: { id: number; name: string }[] }).data ?? [];
+      const cData = (cRes as { data: { id: number; print_name: string }[] }).data ?? [];
+      const vData = (vRes as { data: { id: number; print_name: string }[] }).data ?? [];
       setContacts([
-        ...cData.map(c => ({ id: c.id, label: c.name })),
-        ...vData.map(v => ({ id: v.id, label: v.name })),
+        ...cData.map(c => ({ id: c.id, label: c.print_name })),
+        ...vData.map(v => ({ id: v.id, label: v.print_name })),
       ]);
     });
     if (!isEdit) {
@@ -105,11 +106,24 @@ export default function JournalEntryForm({ entry, onClose, onSaved }: Props) {
       .catch(() => {});
   }
 
-  async function handleSave(continueEdit = false) {
-    if (!date)        { setError('Date is required'); return; }
-    if (!memo.trim()) { setError('Memo is required'); return; }
+  function validate(): string | null {
+    if (!date)        return 'Date is required';
+    if (!memo.trim()) return 'Memo is required';
     const validLines = lines.filter(l => l.account_id);
-    if (!validLines.length) { setError('At least one line with an account is required'); return; }
+    if (!validLines.length) return 'At least one line with an account is required';
+    for (const l of validLines) {
+      const debitErr  = validatePositive(parseFloat(String(l.debit))  || 0, 'Debit amount');
+      if (debitErr)  return debitErr;
+      const creditErr = validatePositive(parseFloat(String(l.credit)) || 0, 'Credit amount');
+      if (creditErr) return creditErr;
+    }
+    return null;
+  }
+
+  async function handleSave(continueEdit = false) {
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+    const validLines = lines.filter(l => l.account_id);
 
     setSaving(true); setError('');
     try {

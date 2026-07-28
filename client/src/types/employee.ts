@@ -31,6 +31,8 @@ export interface Employee {
   notes?: string;
   is_active: boolean;
   created_at: string;
+  application_user_id?: number | null;
+  application_user_login?: string | null;
 }
 
 export interface Project {

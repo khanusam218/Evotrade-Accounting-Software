@@ -1,6 +1,7 @@
 import { apiFetch } from '../api/apiFetch';
 import { useEffect, useState } from 'react';
 import { createBulkReceivePayments } from '../api/receivePayments';
+import { validatePositive } from '../utils/validators';
 
 interface Props {
   onClose: () => void;
@@ -28,6 +29,8 @@ const emptyRow = (): BulkRow => ({
 export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
   const [saving,          setSaving]          = useState(false);
   const [error,           setError]           = useState<string | null>(null);
+  const [errors,          setErrors]          = useState<Record<string, string>>({});
+  const [rowErrors,       setRowErrors]       = useState<Record<number, string>>({});
   const [customers,       setCustomers]       = useState<Customer[]>([]);
   const [coaList,         setCoaList]         = useState<COA[]>([]);
   const [date,            setDate]            = useState(new Date().toISOString().slice(0, 10));
@@ -51,9 +54,37 @@ export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
   const totalAmount = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const fmt = (n: number) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2 });
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!date) e.date = 'Date is required.';
+
+    const re: Record<number, string> = {};
+    let anyValid = false;
+    rows.forEach((r, i) => {
+      const hasCustomer = !!r.customer_id;
+      const amt = parseFloat(r.amount);
+      const hasAmount = r.amount !== '' && !isNaN(amt);
+      if (hasCustomer && !hasAmount) {
+        re[i] = 'Enter an amount for this row.';
+      } else if (hasCustomer && hasAmount) {
+        const amtErr = validatePositive(amt, 'Amount');
+        if (amtErr) re[i] = amtErr;
+        else if (amt === 0) re[i] = 'Amount must be greater than zero.';
+        else anyValid = true;
+      } else if (!hasCustomer && hasAmount && amt !== 0) {
+        re[i] = 'Select a customer for this row.';
+      }
+    });
+    if (!anyValid) e.rows = 'At least one row with a customer and amount is required.';
+    setRowErrors(re);
+    setErrors(e);
+    return Object.keys(e).length === 0 && Object.keys(re).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!validate()) return;
     const validRows = rows.filter(r => r.customer_id && parseFloat(r.amount) > 0);
     if (!validRows.length) { setError('At least one row with a customer and amount is required'); return; }
     setSaving(true);
@@ -101,10 +132,11 @@ export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
               <input
                 type="date"
                 required
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                 value={date}
                 onChange={e => setDate(e.target.value)}
               />
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
 
             {/* Make auto settlements */}
@@ -138,7 +170,7 @@ export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-2 py-1">
                         <select
-                          className="w-full border border-green-400 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                          className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${rowErrors[i] ? 'border-red-500' : 'border-green-400'}`}
                           value={row.customer_id}
                           onChange={e => updateRow(i, 'customer_id', e.target.value)}
                         >
@@ -167,12 +199,13 @@ export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
                       <td className="px-2 py-1">
                         <input
                           type="number"
-                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm text-right"
+                          className={`w-full border rounded px-2 py-1.5 text-sm text-right ${rowErrors[i] ? 'border-red-500' : 'border-gray-300'}`}
                           placeholder="0"
                           min="0" step="0.01"
                           value={row.amount}
                           onChange={e => updateRow(i, 'amount', e.target.value)}
                         />
+                        {rowErrors[i] && <p className="text-xs text-red-500 mt-0.5 whitespace-nowrap">{rowErrors[i]}</p>}
                       </td>
                       <td className="px-2 py-1">
                         <input
@@ -226,6 +259,7 @@ export default function BulkReceivePaymentForm({ onClose, onSaved }: Props) {
                   ))}
                 </tbody>
               </table>
+              {errors.rows && <p className="text-xs text-red-500 mt-1">{errors.rows}</p>}
             </div>
 
             {/* Comments + Total Amount */}

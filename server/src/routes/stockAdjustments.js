@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'SA-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='SA-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
@@ -99,15 +101,28 @@ router.post('/:id/confirm', async (req, res) => {
       "UPDATE stock_adjustments SET status='confirmed' WHERE id=$1 AND status='draft' RETURNING *", [req.params.id]
     );
     if (!rows.length) return res.status(400).json({ error: 'Not found or not draft' });
+
+    // The "Quantity" entered per line is a delta ("add 5" / "remove 3"), not
+    // the resulting absolute count — the adjustment type's direction decides
+    // whether that delta increases or decreases what's on hand. Previously
+    // this always overwrote qty_on_hand to the raw entered number, which is
+    // only correct by coincidence when direction happens to be 'add' and the
+    // product had zero stock beforehand.
+    let direction = 'add';
+    if (rows[0].adjustment_type_id) {
+      const { rows: at } = await client.query('SELECT direction FROM adjustment_types WHERE id=$1', [rows[0].adjustment_type_id]);
+      if (at.length) direction = at[0].direction;
+    }
     const { rows: lines } = await client.query(
       'SELECT * FROM stock_adjustment_lines WHERE adjustment_id=$1', [req.params.id]
     );
     for (const l of lines) {
+      const delta = direction === 'subtract' ? -Number(l.new_qty) : Number(l.new_qty);
       await client.query(
         `INSERT INTO product_stock (product_id,warehouse_id,qty_on_hand)
          VALUES ($1,$2,$3)
-         ON CONFLICT (product_id,warehouse_id) DO UPDATE SET qty_on_hand=$3`,
-        [l.product_id, rows[0].warehouse_id, l.new_qty]
+         ON CONFLICT (product_id,warehouse_id) DO UPDATE SET qty_on_hand=product_stock.qty_on_hand + $3`,
+        [l.product_id, rows[0].warehouse_id, delta]
       );
     }
     await client.query('COMMIT');

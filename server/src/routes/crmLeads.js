@@ -1,8 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeries, getOrCreateSeriesByPrefix } = require('../utils');
+
+async function generateCustomerCode(client) {
+  const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Customers', 'C-', 6);
+  const { rows: maxRows } = await client.query(
+    `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(code, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
+     FROM customers WHERE code ~ '^[A-Za-z]+-[0-9]+$'`
+  );
+  const useNum = Math.max(Number(next_number), Number(maxRows[0].max_num) + 1);
+  await client.query(`UPDATE number_series SET next_number = $1 WHERE name = 'Customers'`, [useNum + 1]);
+  return `${prefix}${String(useNum).padStart(padding, '0')}`;
+}
 
 async function generateLeadNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'L-', 5);
   const { rows: nsRows } = await client.query(
     `SELECT prefix, next_number, padding FROM number_series WHERE prefix = 'L-' FOR UPDATE`
   );
@@ -21,6 +34,7 @@ async function generateLeadNumber(client) {
 
 router.get('/next-number', async (_req, res) => {
   try {
+    await getOrCreateSeriesByPrefix(pool, 'L-', 5);
     const { rows } = await pool.query(`SELECT prefix, next_number, padding FROM number_series WHERE prefix = 'L-'`);
     if (!rows.length) return res.json({ number: 'L-00001' });
     const { prefix, next_number, padding } = rows[0];
@@ -119,6 +133,40 @@ router.delete('/:id', async (req, res) => {
     await pool.query('DELETE FROM crm_leads WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/:id/convert', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: leadRows } = await client.query('SELECT * FROM crm_leads WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!leadRows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Not found' }); }
+    const lead = leadRows[0];
+    if (lead.converted_to_customer_id) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Lead already converted' });
+    }
+
+    const code = await generateCustomerCode(client);
+    const printName = lead.company || lead.contact_name || lead.name;
+    const { rows: custRows } = await client.query(
+      `INSERT INTO customers (code, print_name, email_1, phone_1, contact_person, address_line_1, city, country)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [code, printName, lead.email, lead.phone, lead.contact_name, null, null, null]
+    );
+    const customer = custRows[0];
+
+    const { rows: updatedLeadRows } = await client.query(
+      `UPDATE crm_leads SET stage='won', converted_to_customer_id=$1 WHERE id=$2 RETURNING *`,
+      [customer.id, req.params.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ lead: updatedLeadRows[0], customer });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(400).json({ error: e.message });
+  } finally { client.release(); }
 });
 
 router.post('/:id/activities', async (req, res) => {

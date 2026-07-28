@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateBDNumber(client) {
+  await getOrCreateSeries(client, 'Bank Deposits', 'BD-', 6);
   const { rows } = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
       WHERE name = 'Bank Deposits'
@@ -159,11 +162,20 @@ router.post('/:id/deposit', async (req, res, next) => {
 
     // Credit Undeposited Funds (decrease)
     const { rows: [ufCoa] } = await client.query(
-      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='undeposited_funds'`
+      `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='UndepositedFunds'`
     );
     if (!ufCoa) throw new Error('Undeposited Funds account not found');
     const ufChange = ufCoa.normal_balance === 'debit' ? -total : total;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [ufChange, ufCoa.id]);
+
+    await postJournalEntry(client, {
+      date: bd.date, memo: `Bank Deposit ${bd.number}`, reference: bd.number,
+      source_type: 'BankDeposit', source_id: bd.id,
+      lines: [
+        changeToLine(bankCoa, bankChange, `Bank Deposit ${bd.number}`),
+        changeToLine(ufCoa,   ufChange,   `Bank Deposit ${bd.number}`),
+      ],
+    });
 
     await client.query(`UPDATE bank_deposits SET status='deposited' WHERE id=$1`, [bd.id]);
     await client.query('COMMIT');
@@ -206,10 +218,15 @@ router.post('/:id/cancel', async (req, res, next) => {
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [bankChange, bankCoa.id]);
 
       const { rows: [ufCoa] } = await client.query(
-        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='undeposited_funds'`
+        `SELECT id, normal_balance FROM chart_of_accounts WHERE system_name='UndepositedFunds'`
       );
       const ufChange = ufCoa.normal_balance === 'debit' ? -total : total;
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance-$1 WHERE id=$2', [ufChange, ufCoa.id]);
+
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'BankDeposit', source_id: bd.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Bank Deposit ${bd.number}`,
+      });
     }
 
     await client.query(`UPDATE bank_deposits SET status='cancelled' WHERE id=$1`, [bd.id]);

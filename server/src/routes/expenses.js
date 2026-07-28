@@ -1,9 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { round2 } = require('../utils');
+const { round2, getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateExpenseNumber(client) {
+  await getOrCreateSeries(client, 'Expenses', 'E-', 6);
   const { rows } = await client.query(
     `UPDATE number_series
         SET next_number = next_number + 1
@@ -90,15 +92,14 @@ router.get('/:id', async (req, res, next) => {
 
 // ── POST /api/expenses (create draft) ────────────────────────────────────────
 router.post('/', async (req, res, next) => {
+  const { date, reference, vendor_id, bank_account_id, comments, lines = [] } = req.body;
+  if (!date)            return res.status(400).json({ error: 'date is required' });
+  if (!bank_account_id) return res.status(400).json({ error: 'bank_account_id is required' });
+  if (!lines.length)    return res.status(400).json({ error: 'At least one expense line is required' });
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { date, reference, vendor_id, bank_account_id, comments, lines = [] } = req.body;
-
-    if (!date)            return res.status(400).json({ error: 'date is required' });
-    if (!bank_account_id) return res.status(400).json({ error: 'bank_account_id is required' });
-    if (!lines.length)    return res.status(400).json({ error: 'At least one expense line is required' });
-
     const number      = await generateExpenseNumber(client);
     const gross       = round2(lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0));
 
@@ -183,12 +184,14 @@ router.post('/:id/approve', async (req, res, next) => {
     if (!lines.length) return res.status(400).json({ error: 'No expense lines to post' });
 
     // Debit each expense account (increases balance for debit-normal accounts)
+    const jeLines = [];
     for (const line of lines) {
       const change = line.normal_balance === 'debit' ? line.amount : -line.amount;
       await client.query(
         'UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2',
         [change, line.account_id]
       );
+      jeLines.push(changeToLine({ id: line.account_id, normal_balance: line.normal_balance }, change, `Expense ${expense.number}`));
     }
 
     // Credit the bank / cash account (decreases balance for debit-normal asset)
@@ -205,6 +208,12 @@ router.post('/:id/approve', async (req, res, next) => {
       'UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id = $2',
       [bankChange, bankCoa.id]
     );
+    jeLines.push(changeToLine(bankCoa, bankChange, `Expense ${expense.number}`));
+
+    await postJournalEntry(client, {
+      date: expense.date, memo: `Expense ${expense.number}`, reference: expense.number,
+      source_type: 'Expense', source_id: expense.id, lines: jeLines,
+    });
 
     await client.query(`UPDATE expenses SET status='approved' WHERE id=$1`, [expense.id]);
     await client.query('COMMIT');
@@ -254,6 +263,10 @@ router.post('/:id/cancel', async (req, res, next) => {
         'UPDATE chart_of_accounts SET current_balance = current_balance - $1 WHERE id = $2',
         [bankChange, bankCoa.id]
       );
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'Expense', source_id: expense.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Expense ${expense.number}`,
+      });
     }
 
     await client.query(`UPDATE expenses SET status='cancelled' WHERE id=$1`, [expense.id]);

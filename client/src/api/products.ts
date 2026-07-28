@@ -1,7 +1,7 @@
 import api from './axiosConfig';
 import type {
   Brand, ProductCategory, ProductFilters, ProductFormData,
-  Product, ProductsResponse, ProductStockLevel, Tax,
+  Product, ProductsResponse, Tax,
 } from '../types/product';
 
 
@@ -43,20 +43,3 @@ export const getBrands = async (): Promise<Brand[]> =>
 
 export const getTaxes = async (appliesTo?: 'sales' | 'purchases'): Promise<Tax[]> =>
   (await api.get<Tax[]>('/taxes', { params: appliesTo ? { applies_to: appliesTo } : {} })).data;
-
-export const getProductStockLevels = async (productId: number): Promise<ProductStockLevel[]> =>
-  (await api.get<ProductStockLevel[]>(`/products/${productId}/stock-levels`)).data;
-
-export const setProductStockLevel = async (
-  productId: number,
-  warehouseId: number,
-  minStockLevel: number
-): Promise<ProductStockLevel> =>
-  (await api.put<ProductStockLevel>(
-    `/products/${productId}/stock-levels/${warehouseId}`,
-    { min_stock_level: minStockLevel }
-  )).data;
-
-export const deleteProductStockLevel = async (productId: number, warehouseId: number): Promise<void> => {
-  await api.delete(`/products/${productId}/stock-levels/${warehouseId}`);
-};

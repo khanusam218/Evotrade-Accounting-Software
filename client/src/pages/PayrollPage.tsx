@@ -1,4 +1,4 @@
-﻿import { apiFetch } from '../api/apiFetch';
+﻿import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
 import { useEffect, useState } from 'react';
 import {
   getDepartments, createDepartment, updateDepartment, deleteDepartment,
@@ -7,7 +7,7 @@ import {
   getProjects, createProject, updateProject, deleteProject,
 } from '../api/employees';
 import { Employee, Department, Designation, Project } from '../types/employee';
-import { validateEmail, validatePhone, validateCNIC, validateNTN } from '../utils/validators';
+import { validateEmail, validatePhone, validateCNIC, validateNTN, validateName, validatePositive } from '../utils/validators';
 
 const TABS = ['Employees', 'Departments', 'Designations', 'Projects'];
 const fmt = (n: any) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -227,11 +227,12 @@ function DeptForm({ initial, onSave, onClose }: { initial: Department | null; on
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
-  const nameInvalid = touched && !name.trim();
+  const nameError = touched ? validateName(name, 'Department name') : '';
+  const nameInvalid = !!nameError;
 
   async function handleSave(saveAndNew = false) {
     setTouched(true);
-    if (!name.trim()) return;
+    if (validateName(name, 'Department name')) return;
     setSaving(true); setError('');
     try {
       await onSave({ name, notes });
@@ -270,7 +271,7 @@ function DeptForm({ initial, onSave, onClose }: { initial: Department | null; on
                 onBlur={() => setTouched(true)}
               />
               {nameInvalid && (
-                <p className="text-red-500 text-xs mt-1">Department name is required.</p>
+                <p className="text-red-500 text-xs mt-1">{nameError}</p>
               )}
             </div>
             {/* Notes */}
@@ -297,12 +298,16 @@ function DesigForm({ initial, departments, onSave, onClose }: { initial: Designa
   const [dgTab, setDgTab]   = useState<'general' | 'custom'>('general');
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+  const [nameError, setNameError] = useState('');
 
   async function handleSave(saveAndNew = false) {
+    const err = validateName(form.name, 'Designation name');
+    setNameError(err);
+    if (err) return;
     setSaving(true); setError('');
     try {
       await onSave({ ...form, department_id: Number(form.department_id) || null });
-      if (saveAndNew) setForm({ name: '', department_id: '', notes: '' });
+      if (saveAndNew) { setForm({ name: '', department_id: '', notes: '' }); setNameError(''); }
       else onClose();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -333,7 +338,8 @@ function DesigForm({ initial, departments, onSave, onClose }: { initial: Designa
             <div className="space-y-4 max-w-2xl">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
-                <input className={inputCls} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                <input className={`${inputCls} ${nameError ? 'border-red-500' : ''}`} value={form.name} onChange={e => { setForm(f => ({ ...f, name: e.target.value })); setNameError(''); }} />
+                {nameError && <p className="text-xs text-red-500 mt-1">{nameError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
@@ -392,11 +398,15 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
   const [dor, setDor]             = useState('');
   const [addrLine2, setAddrLine2]   = useState('');
   const [imageUrl, setImageUrl]     = useState('');
-  const [customField, setCustomField] = useState('');
-  const [appUser, setAppUser]       = useState('');
   const [saving, setSaving]         = useState(false);
   const [error, setError]           = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [users, setUsers] = useState<{ id: number; user_id: string }[]>([]);
+
+  useEffect(() => {
+    apiFetch('/api/users').then(parseJsonOrThrow)
+      .then(d => setUsers(d as { id: number; user_id: string }[])).catch(() => {});
+  }, []);
 
   const set = (k: keyof Employee, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
@@ -408,12 +418,14 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
 
   function validateEmployeeFields(): Record<string, string> {
     const errs: Record<string, string> = {};
+    const nameErr = validateName(String(form.name || ''), 'Employee Name'); if (nameErr) errs.name = nameErr;
     const emailErr = validateEmail(String(form.email || '')); if (emailErr) errs.email = emailErr;
     const p1 = validatePhone(String(form.phone || '')); if (p1) errs.phone = p1;
     const p2 = validatePhone(phone2); if (p2) errs.phone2 = p2;
     const p3 = validatePhone(phone3); if (p3) errs.phone3 = p3;
     const cnicErr = validateCNIC(String(form.cnic || '')); if (cnicErr) errs.cnic = cnicErr;
     const ntnErr = validateNTN(String(form.ntn || '')); if (ntnErr) errs.ntn = ntnErr;
+    const salaryErr = validatePositive(Number(form.salary || 0), 'Salary'); if (salaryErr) errs.salary = salaryErr;
     return errs;
   }
 
@@ -503,11 +515,12 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
                   <div>
                     <label className={labelCls}>Employee Name <span className="text-red-500">*</span></label>
                     <input
-                      className={inputCls}
+                      className={`${inputCls} ${fieldErrors.name ? 'border-red-500' : ''}`}
                       placeholder="Employee Name"
                       value={form.name || ''}
-                      onChange={e => set('name', e.target.value)}
+                      onChange={e => { set('name', e.target.value); setFieldErrors(f => ({ ...f, name: validateName(e.target.value, 'Employee Name') })); }}
                     />
+                    {fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
                   </div>
                 </div>
 
@@ -569,7 +582,12 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
                     <select
                       className={inputCls + ' appearance-none pr-8'}
                       value={form.department_id || ''}
-                      onChange={e => set('department_id', Number(e.target.value) || undefined)}
+                      onChange={e => {
+                        const newDeptId = Number(e.target.value) || undefined;
+                        set('department_id', newDeptId);
+                        const selected = designations.find(d => d.id === form.designation_id);
+                        if (selected && selected.department_id !== newDeptId) set('designation_id', undefined);
+                      }}
                     >
                       <option value="">-Choose-</option>
                       {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -589,7 +607,9 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
                       onChange={e => set('designation_id', Number(e.target.value) || undefined)}
                     >
                       <option value="">-Choose-</option>
-                      {designations.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      {designations
+                        .filter(d => !form.department_id || d.department_id === form.department_id)
+                        .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -637,8 +657,9 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={labelCls}>Salary</label>
-                  <input type="number" className={inputCls}
+                  <input type="number" min={0} className={`${inputCls} ${fieldErrors.salary ? 'border-red-500' : ''}`}
                     value={form.salary || ''} onChange={e => set('salary', Number(e.target.value))} />
+                  {fieldErrors.salary && <p className="text-xs text-red-500 mt-1">{fieldErrors.salary}</p>}
                 </div>
                 <div>
                   <label className={labelCls}>Bank Account</label>
@@ -684,10 +705,11 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
               <div className="relative">
                 <select
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 appearance-none"
-                  value={appUser}
-                  onChange={e => setAppUser(e.target.value)}
+                  value={form.application_user_id ?? ''}
+                  onChange={e => set('application_user_id', e.target.value ? Number(e.target.value) : null)}
                 >
                   <option value="">-Choose-</option>
+                  {users.map(u => <option key={u.id} value={u.id}>{u.user_id}</option>)}
                 </select>
                 <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
                   fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -708,8 +730,14 @@ function EmployeeForm({ initial, departments, designations, nextCode, onSave, on
 function ProjectForm({ initial, customers, onSave, onClose }: any) {
   const [form, setForm] = useState<Partial<Project>>({ status: 'active', budget: 0, ...initial });
   const [saving, setSaving] = useState(false); const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const set = (k: keyof Project, v: any) => setForm(f => ({ ...f, [k]: v }));
   const submit = async () => {
+    const errs: Record<string, string> = {};
+    const nameErr = validateName(String(form.name || ''), 'Project name'); if (nameErr) errs.name = nameErr;
+    const budgetErr = validatePositive(Number(form.budget || 0), 'Budget'); if (budgetErr) errs.budget = budgetErr;
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true); setError('');
     try { await onSave(form); onClose(); }
     catch (e: any) { setError(e.message); }
@@ -721,7 +749,11 @@ function ProjectForm({ initial, customers, onSave, onClose }: any) {
         <h3 className="font-semibold mb-4">{initial ? 'Edit' : 'New'} Project</h3>
         {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
         <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2"><label className="label">Name *</label><input className="input" value={form.name || ''} onChange={e => set('name', e.target.value)} /></div>
+          <div className="col-span-2">
+            <label className="label">Name *</label>
+            <input className={`input ${fieldErrors.name ? 'border-red-500' : ''}`} value={form.name || ''} onChange={e => set('name', e.target.value)} />
+            {fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
+          </div>
           <div><label className="label">Customer</label>
             <select className="input" value={form.customer_id || ''} onChange={e => set('customer_id', Number(e.target.value) || undefined)}>
               <option value="">—</option>
@@ -731,7 +763,11 @@ function ProjectForm({ initial, customers, onSave, onClose }: any) {
           <div><label className="label">Reference</label><input className="input" value={form.reference || ''} onChange={e => set('reference', e.target.value)} /></div>
           <div><label className="label">Start Date</label><input type="date" className="input" value={form.start_date?.slice(0, 10) || ''} onChange={e => set('start_date', e.target.value)} /></div>
           <div><label className="label">End Date</label><input type="date" className="input" value={form.end_date?.slice(0, 10) || ''} onChange={e => set('end_date', e.target.value)} /></div>
-          <div><label className="label">Budget</label><input type="number" className="input" value={form.budget || ''} onChange={e => set('budget', Number(e.target.value))} /></div>
+          <div>
+            <label className="label">Budget</label>
+            <input type="number" min={0} className={`input ${fieldErrors.budget ? 'border-red-500' : ''}`} value={form.budget || ''} onChange={e => set('budget', Number(e.target.value))} />
+            {fieldErrors.budget && <p className="text-xs text-red-500 mt-1">{fieldErrors.budget}</p>}
+          </div>
           <div><label className="label">Status</label>
             <select className="input" value={form.status || 'active'} onChange={e => set('status', e.target.value as any)}>
               <option value="active">Active</option>

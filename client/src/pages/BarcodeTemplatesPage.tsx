@@ -1,6 +1,7 @@
 import { apiFetch } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
+import { validateItemName } from '../utils/validators';
 
 const j = (r: Response) => r.ok ? r.json() : r.json().then((e: { error: string }) => Promise.reject(new Error(e.error)));
 
@@ -101,7 +102,7 @@ function BarcodeForm({ initial, onSave, onClose }: {
 }) {
   const [f,           setF]          = useState<Partial<BarcodeTemplate>>({ ...empty(), ...initial });
   const [preview,     setPreview]    = useState('12340987');
-  const [nameErr,     setNameErr]    = useState(false);
+  const [nameErr,     setNameErr]    = useState('');
   const [saving,      setSaving]     = useState(false);
   const [error,       setError]      = useState('');
   const [showPreview, setShowPreview] = useState(false);
@@ -135,11 +136,12 @@ function BarcodeForm({ initial, onSave, onClose }: {
     set(k, parseFloat(e.target.value) || 0);
 
   async function save(mode: 'new' | 'close') {
-    if (!f.name?.trim()) { setNameErr(true); return; }
-    setNameErr(false); setSaving(true); setError('');
+    const err = validateItemName(f.name ?? '', 'Barcode Template Name');
+    if (err) { setNameErr(err); return; }
+    setNameErr(''); setSaving(true); setError('');
     try {
       await onSave(f, mode);
-      if (mode === 'new') { setF({ ...empty() }); setShowPreview(false); }
+      if (mode === 'new') { setF({ ...empty() }); setShowPreview(false); setNameErr(''); }
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Save failed'); }
     finally { setSaving(false); }
   }
@@ -168,8 +170,8 @@ function BarcodeForm({ initial, onSave, onClose }: {
               <label className={lbl}>Barcode Template Name <span className="text-red-500">*</span></label>
               <input className={`${inp} ${nameErr ? 'border-red-500 ring-1 ring-red-500' : ''}`}
                 placeholder="Barcode Template Name" value={f.name ?? ''}
-                onChange={e => { setF(p => ({ ...p, name: e.target.value })); setNameErr(false); }} />
-              {nameErr && <p className="text-xs text-red-500 mt-1">Barcode Template is required.</p>}
+                onChange={e => { setF(p => ({ ...p, name: e.target.value })); setNameErr(''); }} />
+              {nameErr && <p className="text-xs text-red-500 mt-1">{nameErr}</p>}
             </div>
             {/* Barcode Value (preview) */}
             <div>

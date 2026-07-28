@@ -31,19 +31,24 @@ router.get('/profit-loss', async (req, res) => {
       date_from = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
       date_to = new Date().toISOString().split('T')[0]
     } = req.query;
+    // No seeded account ever carries account_type='cost_of_goods_sold' — every
+    // COGS account is really account_type='expense', distinguished only by
+    // system_name='DefaultCostOfGoodsSold' (the same account every purchase
+    // posting already debits). Bucket on that instead of the nonexistent type.
     const { rows } = await pool.query(`
-      SELECT coa.account_type,
-             COALESCE(SUM(jel.credit - jel.debit), 0) AS amount
+      SELECT
+        CASE WHEN coa.system_name = 'DefaultCostOfGoodsSold' THEN 'cost_of_goods_sold' ELSE coa.account_type END AS bucket,
+        COALESCE(SUM(jel.credit - jel.debit), 0) AS amount
       FROM chart_of_accounts coa
       JOIN journal_entry_lines jel ON jel.account_id = coa.id
       JOIN journal_entries je ON je.id = jel.journal_entry_id
         AND je.status = 'posted' AND je.date BETWEEN $1 AND $2
-      WHERE coa.account_type IN ('revenue','cost_of_goods_sold','expense')
-      GROUP BY coa.account_type
+      WHERE coa.account_type IN ('revenue','expense')
+      GROUP BY bucket
     `, [date_from, date_to]);
 
     const byType = {};
-    rows.forEach(r => { byType[r.account_type] = Number(r.amount); });
+    rows.forEach(r => { byType[r.bucket] = Number(r.amount); });
     const revenue = byType['revenue'] || 0;
     const cogs = -(byType['cost_of_goods_sold'] || 0);
     const expenses = -(byType['expense'] || 0);
@@ -51,17 +56,19 @@ router.get('/profit-loss', async (req, res) => {
     const net_profit = gross_profit - expenses;
 
     const { rows: detail } = await pool.query(`
-      SELECT coa.account_type, coa.code, coa.name,
-             COALESCE(SUM(jel.credit - jel.debit), 0) AS amount
+      SELECT
+        CASE WHEN coa.system_name = 'DefaultCostOfGoodsSold' THEN 'cost_of_goods_sold' ELSE coa.account_type END AS account_type,
+        coa.code, coa.name,
+        COALESCE(SUM(jel.credit - jel.debit), 0) AS amount
       FROM chart_of_accounts coa
       JOIN journal_entry_lines jel ON jel.account_id = coa.id
       JOIN journal_entries je ON je.id = jel.journal_entry_id
         AND je.status = 'posted' AND je.date BETWEEN $1 AND $2
-      WHERE coa.account_type IN ('revenue','cost_of_goods_sold','expense')
+      WHERE coa.account_type IN ('revenue','expense')
         AND coa.is_parent = false
-      GROUP BY coa.id, coa.account_type, coa.code, coa.name
+      GROUP BY coa.id, account_type, coa.code, coa.name
       HAVING COALESCE(SUM(jel.credit - jel.debit), 0) <> 0
-      ORDER BY coa.account_type, coa.code
+      ORDER BY account_type, coa.code
     `, [date_from, date_to]);
 
     res.json({ summary: { revenue, cogs, gross_profit, expenses, net_profit }, detail });
@@ -82,6 +89,19 @@ router.get('/ar-aging', async (req, res) => {
         AND si.date <= $1
       ORDER BY days_overdue DESC, c.print_name
     `, [as_of]);
+
+    // A customer's Opening Balance predates any invoice history, so it has no
+    // due date to age against — it's carried as a synthetic "current" row.
+    const { rows: openingRows } = await pool.query(`
+      SELECT print_name AS customer_name, opening_balance FROM customers WHERE COALESCE(opening_balance,0) <> 0
+    `);
+    for (const o of openingRows) {
+      rows.push({
+        number: 'Opening Balance', date: null, due_date: null,
+        net_amount: o.opening_balance, balance_amount: o.opening_balance,
+        customer_name: o.customer_name, days_overdue: 0,
+      });
+    }
 
     const buckets = { current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, over_90: 0, total: 0 };
     rows.forEach(r => {
@@ -113,6 +133,19 @@ router.get('/ap-aging', async (req, res) => {
         AND pi.date <= $1
       ORDER BY days_overdue DESC, v.print_name
     `, [as_of]);
+
+    // A vendor's Opening Balance predates any invoice history, so it has no
+    // due date to age against — it's carried as a synthetic "current" row.
+    const { rows: openingRows } = await pool.query(`
+      SELECT print_name AS vendor_name, opening_balance FROM vendors WHERE COALESCE(opening_balance,0) <> 0
+    `);
+    for (const o of openingRows) {
+      rows.push({
+        number: 'Opening Balance', date: null, due_date: null,
+        net_amount: o.opening_balance, balance_amount: o.opening_balance,
+        vendor_name: o.vendor_name, days_overdue: 0,
+      });
+    }
 
     const buckets = { current: 0, days_1_30: 0, days_31_60: 0, days_61_90: 0, over_90: 0, total: 0 };
     rows.forEach(r => {
@@ -238,10 +271,10 @@ router.get('/customer-balance', async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT c.id, c.code, c.print_name AS customer_name,
-             COALESCE(SUM(si.balance_amount), 0) AS balance
+             COALESCE(c.opening_balance, 0) + COALESCE(SUM(si.balance_amount), 0) AS balance
       FROM customers c
       LEFT JOIN sales_invoices si ON si.customer_id = c.id AND si.status IN ('approved','partially_paid')
-      GROUP BY c.id, c.code, c.print_name
+      GROUP BY c.id, c.code, c.print_name, c.opening_balance
       ORDER BY c.print_name
     `);
     res.json(rows);
@@ -253,10 +286,10 @@ router.get('/vendor-balance', async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT v.id, v.code, v.print_name AS vendor_name,
-             COALESCE(SUM(pi.balance_amount), 0) AS balance
+             COALESCE(v.opening_balance, 0) + COALESCE(SUM(pi.balance_amount), 0) AS balance
       FROM vendors v
       LEFT JOIN purchase_invoices pi ON pi.vendor_id = v.id AND pi.status IN ('approved','partially_paid')
-      GROUP BY v.id, v.code, v.print_name
+      GROUP BY v.id, v.code, v.print_name, v.opening_balance
       ORDER BY v.print_name
     `);
     res.json(rows);
@@ -298,7 +331,7 @@ router.get('/expense-report', async (req, res) => {
   try {
     const { date_from = '2000-01-01', date_to = new Date().toISOString().split('T')[0] } = req.query;
     const { rows } = await pool.query(`
-      SELECT e.date, e.comments, e.total_amount, ba.name AS bank_name
+      SELECT e.date, e.comments, e.gross_amount, ba.name AS bank_name
       FROM expenses e
       JOIN bank_accounts ba ON ba.id = e.bank_account_id
       WHERE e.date BETWEEN $1 AND $2
@@ -377,10 +410,13 @@ router.get('/stock-adjustment-report', async (req, res) => {
   try {
     const { date_from = '2000-01-01', date_to = new Date().toISOString().split('T')[0] } = req.query;
     const { rows } = await pool.query(`
-      SELECT sa.date, sa.reason, sa.quantity, sa.notes, p.name AS product_name, w.name AS warehouse_name
+      SELECT sa.date, sa.number, at.name AS adjustment_type, sal.new_qty - sal.current_qty AS quantity,
+             sal.notes, p.name AS product_name, w.name AS warehouse_name
       FROM stock_adjustments sa
-      JOIN products p ON p.id = sa.product_id
+      JOIN stock_adjustment_lines sal ON sal.adjustment_id = sa.id
+      JOIN products p ON p.id = sal.product_id
       JOIN warehouses w ON w.id = sa.warehouse_id
+      LEFT JOIN adjustment_types at ON at.id = sa.adjustment_type_id
       WHERE sa.date BETWEEN $1 AND $2
       ORDER BY sa.date DESC
     `, [date_from, date_to]);
@@ -551,7 +587,7 @@ router.get('/cust-refund', async (req, res) => {
   try {
     const { customer_id, date_from = '2000-01-01', date_to = new Date().toISOString().split('T')[0] } = req.query;
     let q = `
-      SELECT sr.number, sr.date, sr.net_amount, sr.status, c.print_name AS customer_name
+      SELECT sr.number, sr.date, sr.total_amount, sr.status, c.print_name AS customer_name
       FROM sales_refunds sr
       JOIN customers c ON c.id = sr.customer_id
       WHERE sr.date BETWEEN $1 AND $2
@@ -1165,33 +1201,17 @@ router.get('/wh-location-stock', async (req, res) => {
 // ── Low Inventory Report ─────────────────────────────────────────────────────
 router.get('/low-inventory', async (req, res) => {
   try {
-    const { warehouse_id, category_id, brand_id, product_id, is_active } = req.query;
-    const conditions = [
-      'ps.min_stock_level > 0',
-      'ps.qty_on_hand <= ps.min_stock_level',
-    ];
-    const params = [];
-
-    if (warehouse_id) { params.push(warehouse_id); conditions.push(`ps.warehouse_id = $${params.length}`); }
-    if (category_id)  { params.push(category_id);  conditions.push(`p.category_id = $${params.length}`); }
-    if (brand_id)      { params.push(brand_id);      conditions.push(`p.brand_id = $${params.length}`); }
-    if (product_id)    { params.push(product_id);    conditions.push(`p.id = $${params.length}`); }
-    if (is_active !== undefined && is_active !== '') {
-      params.push(is_active === 'true');
-      conditions.push(`p.is_active = $${params.length}`);
-    }
-
     const { rows } = await pool.query(`
-      SELECT p.code AS product_code, p.name AS product_name,
-             w.name AS warehouse_name,
-             ps.qty_on_hand AS quantity_in_stock,
-             ps.min_stock_level AS low_threshold
-      FROM product_stock ps
-      JOIN products p   ON p.id = ps.product_id
-      JOIN warehouses w ON w.id = ps.warehouse_id
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY p.name, w.name
-    `, params);
+      SELECT p.code, p.name AS product_name, p.unit_of_measurement AS unit,
+             COALESCE(ps.qty_on_hand, 0) AS qty_on_hand,
+             p.purchase_price AS unit_cost,
+             COALESCE(ps.qty_on_hand, 0) * p.purchase_price AS stock_value
+      FROM products p
+      LEFT JOIN product_stock ps ON ps.product_id = p.id
+      WHERE p.is_active = true AND p.track_inventory = true
+        AND COALESCE(ps.qty_on_hand, 0) <= 5
+      ORDER BY qty_on_hand ASC
+    `);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1305,12 +1325,13 @@ router.get('/stock-valuation', async (req, res) => {
 router.get('/stock-discrepancy', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT sa.number, sa.date, sa.reason, sa.quantity, sa.notes,
+      SELECT sa.number, sa.date, sal.new_qty - sal.current_qty AS quantity, sal.notes,
              p.name AS product_name, w.name AS warehouse_name
       FROM stock_adjustments sa
-      JOIN products p ON p.id = sa.product_id
+      JOIN stock_adjustment_lines sal ON sal.adjustment_id = sa.id
+      JOIN products p ON p.id = sal.product_id
       JOIN warehouses w ON w.id = sa.warehouse_id
-      WHERE sa.status = 'completed'
+      WHERE sa.status = 'confirmed' AND sal.new_qty <> sal.current_qty
       ORDER BY sa.date DESC
     `);
     res.json(rows);
@@ -1443,7 +1464,7 @@ router.get('/other-contact-ledger', async (req, res) => {
   try {
     const { contact_id, date_from = '2000-01-01', date_to = new Date().toISOString().split('T')[0] } = req.query;
     let q = `
-      SELECT oc.print_name AS contact_name, oc.code, oc.category, oc.email, oc.phone, oc.city
+      SELECT oc.print_name AS contact_name, oc.code, oc.category, oc.email, oc.phone, oc.address
       FROM other_contacts oc
       WHERE oc.is_active = true
     `;
@@ -1646,7 +1667,7 @@ router.get('/business-summary', async (req, res) => {
       FROM purchase_invoices WHERE status NOT IN ('cancelled','draft') AND date = $1
     `, [date]);
     const { rows: expenses } = await pool.query(`
-      SELECT COUNT(id) AS count, COALESCE(SUM(total_amount), 0) AS total
+      SELECT COUNT(id) AS count, COALESCE(SUM(gross_amount), 0) AS total
       FROM expenses WHERE date = $1
     `, [date]);
     res.json({
@@ -1750,7 +1771,8 @@ router.get('/material-issuance', async (req, res) => {
       SELECT wo.number, wo.date, wo.status, wo.planned_qty, wo.produced_qty,
              p.name AS product_name, w.name AS warehouse_name
       FROM work_orders wo
-      JOIN products p ON p.id = wo.bom_id
+      JOIN bill_of_materials b ON b.id = wo.bom_id
+      JOIN products p ON p.id = b.product_id
       JOIN warehouses w ON w.id = wo.warehouse_id
       WHERE wo.date BETWEEN $1 AND $2
       ORDER BY wo.date DESC
@@ -1767,7 +1789,8 @@ router.get('/jo-expense', async (req, res) => {
       SELECT wo.number, wo.date, wo.status, wo.planned_qty, wo.produced_qty,
              p.name AS product_name
       FROM work_orders wo
-      JOIN products p ON p.id = wo.bom_id
+      JOIN bill_of_materials b ON b.id = wo.bom_id
+      JOIN products p ON p.id = b.product_id
       WHERE wo.date BETWEEN $1 AND $2
       ORDER BY wo.date DESC
     `, [date_from, date_to]);
@@ -1783,7 +1806,8 @@ router.get('/jo-production', async (req, res) => {
       SELECT wo.number, wo.date, wo.status, wo.planned_qty, wo.produced_qty,
              p.name AS product_name
       FROM work_orders wo
-      JOIN products p ON p.id = wo.bom_id
+      JOIN bill_of_materials b ON b.id = wo.bom_id
+      JOIN products p ON p.id = b.product_id
       WHERE wo.date BETWEEN $1 AND $2 AND wo.produced_qty > 0
       ORDER BY wo.date DESC
     `, [date_from, date_to]);
@@ -1799,7 +1823,8 @@ router.get('/jo-validation', async (req, res) => {
       SELECT wo.number, wo.date, wo.status, wo.planned_qty, wo.produced_qty,
              p.name AS product_name
       FROM work_orders wo
-      JOIN products p ON p.id = wo.bom_id
+      JOIN bill_of_materials b ON b.id = wo.bom_id
+      JOIN products p ON p.id = b.product_id
       WHERE wo.date BETWEEN $1 AND $2 AND wo.planned_qty != wo.produced_qty
       ORDER BY wo.date DESC
     `, [date_from, date_to]);

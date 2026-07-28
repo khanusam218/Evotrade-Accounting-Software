@@ -89,7 +89,7 @@ export default function SalesOrdersPage() {
       if (f.grossAmountTo)    data = data.filter(r => Number(r.gross_amount) <= Number(f.grossAmountTo));
       if (f.netAmountFrom)    data = data.filter(r => Number(r.net_amount) >= Number(f.netAmountFrom));
       if (f.netAmountTo)      data = data.filter(r => Number(r.net_amount) <= Number(f.netAmountTo));
-      if (!f.showDeclined)    data = data.filter(r => r.status !== 'declined');
+      if (!f.showDeclined)    data = data.filter(r => r.status !== 'cancelled');
       setRecords(data);
       setSelected(new Set());
     } catch (err: unknown) {

@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Sales Returns', 'SR-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Sales Returns'
@@ -138,15 +141,24 @@ router.post('/:id/approve', async (req, res) => {
     const net = Number(ret.net_amount);
 
     // DR Revenue (reverse), CR A/R
-    const { rows: arRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_receivable' LIMIT 1`);
+    const { rows: arRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsReceivable' LIMIT 1`);
     if (!arRows.length) return res.status(400).json({ error: 'Accounts Receivable account not found' });
-    const { rows: revRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE account_type='revenue' AND parent_id IS NOT NULL LIMIT 1`);
+    const { rows: revRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='DefaultSales' LIMIT 1`);
     if (!revRows.length) return res.status(400).json({ error: 'No revenue account found' });
 
     const arChange  = arRows[0].normal_balance  === 'debit' ? -net : net;
     const revChange = revRows[0].normal_balance === 'credit' ? -net : net;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [arChange,  arRows[0].id]);
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [revChange, revRows[0].id]);
+
+    await postJournalEntry(client, {
+      date: ret.date, memo: `Sales Return ${ret.number}`, reference: ret.number,
+      source_type: 'SalesReturn', source_id: ret.id,
+      lines: [
+        changeToLine(revRows[0], revChange, `Sales Return ${ret.number}`),
+        changeToLine(arRows[0],  arChange,  `Sales Return ${ret.number}`),
+      ],
+    });
 
     // Reduce linked invoice balance
     if (ret.invoice_id) {
@@ -182,14 +194,18 @@ router.post('/:id/cancel', async (req, res) => {
 
     if (ret.status === 'approved') {
       const net = Number(ret.net_amount);
-      const { rows: arRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_receivable' LIMIT 1`);
-      const { rows: revRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE account_type='revenue' AND parent_id IS NOT NULL LIMIT 1`);
+      const { rows: arRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsReceivable' LIMIT 1`);
+      const { rows: revRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='DefaultSales' LIMIT 1`);
       if (arRows.length && revRows.length) {
         const arChange  = arRows[0].normal_balance  === 'debit' ? net : -net;
         const revChange = revRows[0].normal_balance === 'credit' ? net : -net;
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [arChange,  arRows[0].id]);
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [revChange, revRows[0].id]);
       }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'SalesReturn', source_id: ret.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Sales Return ${ret.number}`,
+      });
       if (ret.invoice_id) {
         await client.query(
           `UPDATE sales_invoices

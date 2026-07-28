@@ -1,7 +1,12 @@
-﻿import { apiFetch } from '../api/apiFetch';
-import { useState } from 'react';
+﻿import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
+import { useEffect, useState } from 'react';
 import type { SalesPerson, SalesPersonFormData } from '../types/salesperson';
-import { validateEmail, validatePhone } from '../utils/validators';
+import { validateEmail, validateName, validatePhone } from '../utils/validators';
+import { getBankAccountsLookup } from '../api/bankAccounts';
+import type { BankAccount } from '../types/bankAccount';
+
+interface NumberSeriesRow { id: number; name: string | null; prefix: string; }
+interface UserRow { id: number; user_id: string; }
 
 interface Props {
   salesPerson: SalesPerson | null;
@@ -27,6 +32,7 @@ const EMPTY: SalesPersonFormData = {
   receive_payment_series_id: '',
   manager_id: '',
   application_user_id: '',
+  branch_name: '',
 };
 
 function toFormData(sp: SalesPerson): SalesPersonFormData {
@@ -45,6 +51,7 @@ function toFormData(sp: SalesPerson): SalesPersonFormData {
     receive_payment_series_id: sp.receive_payment_series_id ? String(sp.receive_payment_series_id) : '',
     manager_id: sp.manager_id ? String(sp.manager_id) : '',
     application_user_id: sp.application_user_id ? String(sp.application_user_id) : '',
+    branch_name: sp.branch_name ?? '',
   };
 }
 
@@ -63,13 +70,21 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const handleSave = async (saveAndNew: boolean) => {
-    if (!form.print_name.trim()) {
-      setError('Sales Person Name is required');
-      return;
-    }
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [numberSeries, setNumberSeries] = useState<NumberSeriesRow[]>([]);
+  const [otherPersons, setOtherPersons] = useState<SalesPerson[]>([]);
+  const [users,        setUsers]        = useState<UserRow[]>([]);
 
+  useEffect(() => {
+    getBankAccountsLookup().then(setBankAccounts).catch(() => {});
+    apiFetch('/api/number-series').then(parseJsonOrThrow).then(d => setNumberSeries(d as NumberSeriesRow[])).catch(() => {});
+    apiFetch('/api/sales-persons').then(parseJsonOrThrow).then(d => setOtherPersons(d as SalesPerson[])).catch(() => {});
+    apiFetch('/api/users').then(parseJsonOrThrow).then(d => setUsers(d as UserRow[])).catch(() => {});
+  }, []);
+
+  const handleSave = async (saveAndNew: boolean) => {
     const errs: Record<string, string> = {};
+    const nameErr = validateName(form.print_name, 'Sales Person Name'); if (nameErr) errs.print_name = nameErr;
     const emailErr = validateEmail(form.email); if (emailErr) errs.email = emailErr;
     const phoneErr = validatePhone(form.phone); if (phoneErr) errs.phone = phoneErr;
     setFieldErrors(errs);
@@ -89,6 +104,12 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
         is_manager: form.is_manager,
         status: form.status,
         notes: form.notes || null,
+        cash_account_id: form.cash_account_id ? Number(form.cash_account_id) : null,
+        sale_order_series_id: form.sale_order_series_id ? Number(form.sale_order_series_id) : null,
+        receive_payment_series_id: form.receive_payment_series_id ? Number(form.receive_payment_series_id) : null,
+        manager_id: form.manager_id ? Number(form.manager_id) : null,
+        application_user_id: form.application_user_id ? Number(form.application_user_id) : null,
+        branch_name: form.branch_name || null,
       };
 
       const r = await apiFetch(url, {
@@ -184,10 +205,11 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
               <input
                 type="text"
                 placeholder="Sales Person Name"
-                className={inputCls}
+                className={`${inputCls} ${fieldErrors.print_name ? 'border-red-500' : ''}`}
                 value={form.print_name}
                 onChange={e => set('print_name', e.target.value)}
               />
+              {fieldErrors.print_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.print_name}</p>}
             </div>
 
             {/* Row 2: Type (checkboxes) | Cash Account */}
@@ -236,6 +258,7 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                   onChange={e => set('cash_account_id', e.target.value)}
                 >
                   <option value="">-Choose-</option>
+                  {bankAccounts.map(b => <option key={b.id} value={b.id}>{b.bank_name || b.name}</option>)}
                 </select>
               </div>
             </div>
@@ -251,13 +274,8 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                     onChange={e => set('sale_order_series_id', e.target.value)}
                   >
                     <option value="">-Choose-</option>
+                    {numberSeries.map(s => <option key={s.id} value={s.id}>{s.name ?? s.prefix}</option>)}
                   </select>
-                  <button
-                    type="button"
-                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-semibold whitespace-nowrap transition-colors"
-                  >
-                    +Add
-                  </button>
                 </div>
               </div>
               <div>
@@ -269,13 +287,8 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                     onChange={e => set('receive_payment_series_id', e.target.value)}
                   >
                     <option value="">-Choose-</option>
+                    {numberSeries.map(s => <option key={s.id} value={s.id}>{s.name ?? s.prefix}</option>)}
                   </select>
-                  <button
-                    type="button"
-                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-semibold whitespace-nowrap transition-colors"
-                  >
-                    +Add
-                  </button>
                 </div>
               </div>
             </div>
@@ -311,7 +324,8 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
               </label>
             </div>
 
-            {/* Row 5: Manager */}
+            {/* Row 5: Manager | Branch */}
+            <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Manager</label>
               <select
@@ -320,7 +334,21 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                 onChange={e => set('manager_id', e.target.value)}
               >
                 <option value="">-Choose-</option>
+                {otherPersons.filter(p => !isEdit || p.id !== salesPerson!.id).map(p => (
+                  <option key={p.id} value={p.id}>{p.print_name}</option>
+                ))}
               </select>
+            </div>
+            <div>
+              <label className={labelCls}>Branch</label>
+              <input
+                type="text"
+                className={inputCls}
+                placeholder="Branch"
+                value={form.branch_name}
+                onChange={e => set('branch_name', e.target.value)}
+              />
+            </div>
             </div>
 
             {/* Row 6: Email | Phone */}
@@ -330,7 +358,7 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                 <input
                   type="email"
                   placeholder="Email"
-                  className={inputCls}
+                  className={`${inputCls} ${fieldErrors.email ? 'border-red-500' : ''}`}
                   value={form.email}
                   onChange={e => set('email', e.target.value)}
                 />
@@ -341,7 +369,7 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                 <input
                   type="tel"
                   placeholder="Phone"
-                  className={inputCls}
+                  className={`${inputCls} ${fieldErrors.phone ? 'border-red-500' : ''}`}
                   value={form.phone}
                   onChange={e => set('phone', e.target.value)}
                 />
@@ -385,6 +413,7 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
                 onChange={e => set('application_user_id', e.target.value)}
               >
                 <option value="">-Choose-</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.user_id}</option>)}
               </select>
             </div>
           </div>
@@ -403,11 +432,11 @@ export default function SalesPersonForm({ salesPerson, onClose, onSaved, onRefre
           </button>
           <button
             type="button"
-            onClick={() => handleSave(false)}
+            onClick={onClose}
             disabled={saving}
-            className="bg-gray-300 hover:bg-gray-400 text-gray-700 text-sm font-semibold px-6 py-2 rounded transition-colors disabled:opacity-50"
+            className="bg-orange-400 hover:bg-orange-500 text-white text-sm font-semibold px-6 py-2 rounded transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            SAVE
+            <span className="text-lg leading-none font-light">×</span> CLOSE
           </button>
         </div>
     </div>

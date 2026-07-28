@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Make Payments', 'MP-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Make Payments'
@@ -25,6 +28,17 @@ async function saveInstruments(client, paymentId, instruments) {
     total += amt;
   }
   return total;
+}
+
+async function saveAllocations(client, paymentId, allocations) {
+  await client.query('DELETE FROM mp_allocations WHERE payment_id = $1', [paymentId]);
+  for (const alloc of allocations) {
+    if (!alloc.invoice_id || !(Number(alloc.amount) > 0)) continue;
+    await client.query(
+      `INSERT INTO mp_allocations (payment_id, invoice_id, amount) VALUES ($1,$2,$3)`,
+      [paymentId, alloc.invoice_id, Number(alloc.amount)]
+    );
+  }
 }
 
 // GET /next-number — must be before /:id
@@ -85,7 +99,12 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN chart_of_accounts coa ON coa.id = i.account_id
        WHERE i.payment_id=$1 ORDER BY i.id`, [req.params.id]
     );
-    res.json({ ...rows[0], instruments });
+    const { rows: allocations } = await pool.query(
+      `SELECT al.*, pi.number AS invoice_number, pi.net_amount, pi.balance_amount
+       FROM mp_allocations al JOIN purchase_invoices pi ON pi.id = al.invoice_id
+       WHERE al.payment_id = $1 ORDER BY al.id`, [req.params.id]
+    );
+    res.json({ ...rows[0], instruments, allocations });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -93,7 +112,7 @@ router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { vendor_id, date, reference, notes, instruments = [] } = req.body;
+    const { vendor_id, date, reference, notes, instruments = [], allocations = [] } = req.body;
     if (!vendor_id) return res.status(400).json({ error: 'vendor_id is required' });
     if (!instruments.length) return res.status(400).json({ error: 'At least one instrument is required' });
     const number = await nextNumber(client);
@@ -103,7 +122,9 @@ router.post('/', async (req, res) => {
       [number, date, vendor_id, reference || null, notes || null]
     );
     const total = await saveInstruments(client, rows[0].id, instruments);
-    const { rows: u } = await client.query('UPDATE make_payments SET total_amount=$1, unadjusted_amount=$1 WHERE id=$2 RETURNING *', [total, rows[0].id]);
+    await saveAllocations(client, rows[0].id, allocations);
+    const allocTotal = allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    const { rows: u } = await client.query('UPDATE make_payments SET total_amount=$1, unadjusted_amount=$2 WHERE id=$3 RETURNING *', [total, total - allocTotal, rows[0].id]);
     await client.query('COMMIT');
     res.status(201).json(u[0]);
   } catch (e) { await client.query('ROLLBACK'); res.status(500).json({ error: e.message }); }
@@ -117,12 +138,14 @@ router.put('/:id', async (req, res) => {
     const { rows: ex } = await client.query('SELECT * FROM make_payments WHERE id=$1', [req.params.id]);
     if (!ex.length) return res.status(404).json({ error: 'Not found' });
     if (ex[0].status !== 'draft') return res.status(400).json({ error: 'Only draft payments can be edited' });
-    const { vendor_id, date, reference, notes, instruments = [] } = req.body;
+    const { vendor_id, date, reference, notes, instruments = [], allocations = [] } = req.body;
     if (!instruments.length) return res.status(400).json({ error: 'At least one instrument is required' });
     const total = await saveInstruments(client, req.params.id, instruments);
+    await saveAllocations(client, req.params.id, allocations);
+    const allocTotal = allocations.reduce((s, a) => s + (Number(a.amount) || 0), 0);
     const { rows } = await client.query(
-      `UPDATE make_payments SET vendor_id=$1, date=$2, reference=$3, notes=$4, total_amount=$5, unadjusted_amount=$5 WHERE id=$6 RETURNING *`,
-      [vendor_id, date, reference || null, notes || null, total, req.params.id]
+      `UPDATE make_payments SET vendor_id=$1, date=$2, reference=$3, notes=$4, total_amount=$5, unadjusted_amount=$6 WHERE id=$7 RETURNING *`,
+      [vendor_id, date, reference || null, notes || null, total, total - allocTotal, req.params.id]
     );
     await client.query('COMMIT');
     res.json(rows[0]);
@@ -141,18 +164,43 @@ router.post('/:id/approve', async (req, res) => {
     const total = Number(mp.total_amount);
 
     // DR A/P, CR each instrument account
-    const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+    const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
     if (!apRows.length) return res.status(400).json({ error: 'Accounts Payable account not found' });
     const apChange = apRows[0].normal_balance === 'credit' ? -total : total;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange, apRows[0].id]);
 
+    const jeLines = [changeToLine(apRows[0], apChange, `Make Payment ${mp.number}`)];
     const { rows: instruments } = await client.query('SELECT * FROM make_payment_instruments WHERE payment_id=$1', [mp.id]);
     for (const inst of instruments) {
       if (!inst.account_id) continue;
-      const { rows: coa } = await client.query('SELECT normal_balance FROM chart_of_accounts WHERE id=$1', [inst.account_id]);
+      const { rows: coa } = await client.query('SELECT * FROM chart_of_accounts WHERE id=$1', [inst.account_id]);
       if (!coa.length) continue;
       const bankChange = coa[0].normal_balance === 'debit' ? -Number(inst.amount) : Number(inst.amount);
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [bankChange, inst.account_id]);
+      jeLines.push(changeToLine(coa[0], bankChange, `Make Payment ${mp.number}`));
+    }
+
+    await postJournalEntry(client, {
+      date: mp.date, memo: `Make Payment ${mp.number}`, reference: mp.number,
+      source_type: 'MakePayment', source_id: mp.id, lines: jeLines,
+    });
+
+    // Apply allocations — reduce each specific invoice's balance
+    const { rows: allocations } = await client.query(
+      'SELECT * FROM mp_allocations WHERE payment_id = $1', [mp.id]
+    );
+    for (const alloc of allocations) {
+      await client.query(
+        `UPDATE purchase_invoices
+         SET paid_amount = paid_amount + $1,
+             balance_amount = balance_amount - $1,
+             status = CASE
+               WHEN (balance_amount - $1) <= 0 THEN 'paid'
+               ELSE 'partially_paid'
+             END
+         WHERE id = $2`,
+        [alloc.amount, alloc.invoice_id]
+      );
     }
 
     const { rows: u } = await client.query(`UPDATE make_payments SET status='approved' WHERE id=$1 RETURNING *`, [req.params.id]);
@@ -173,7 +221,7 @@ router.post('/:id/cancel', async (req, res) => {
 
     if (mp.status === 'approved') {
       const total = Number(mp.total_amount);
-      const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+      const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
       if (apRows.length) {
         const apChange = apRows[0].normal_balance === 'credit' ? total : -total;
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange, apRows[0].id]);
@@ -185,6 +233,25 @@ router.post('/:id/cancel', async (req, res) => {
         if (!coa.length) continue;
         const bankChange = coa[0].normal_balance === 'debit' ? Number(inst.amount) : -Number(inst.amount);
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [bankChange, inst.account_id]);
+      }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'MakePayment', source_id: mp.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Make Payment ${mp.number}`,
+      });
+
+      // Reverse invoice allocations
+      const { rows: allocations } = await client.query(
+        'SELECT * FROM mp_allocations WHERE payment_id = $1', [mp.id]
+      );
+      for (const alloc of allocations) {
+        await client.query(
+          `UPDATE purchase_invoices
+           SET paid_amount = paid_amount - $1,
+               balance_amount = balance_amount + $1,
+               status = CASE WHEN (paid_amount - $1) <= 0 THEN 'approved' ELSE 'partially_paid' END
+           WHERE id = $2`,
+          [alloc.amount, alloc.invoice_id]
+        );
       }
     }
 

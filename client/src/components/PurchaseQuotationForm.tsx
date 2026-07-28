@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import type { PurchaseQuotation, PurchaseQuotationLine } from '../types/purchaseQuotation';
 import { createPurchaseQuotation, updatePurchaseQuotation, getPurchaseQuotation } from '../api/purchaseQuotations';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Vendor  { id: number; print_name: string; }
 interface Product { id: number; name: string; purchase_price: number; purchase_tax_id: number | null; }
@@ -25,6 +26,7 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
   const [lines,    setLines]    = useState<PurchaseQuotationLine[]>([emptyLine()]);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState('');
+  const [errors,   setErrors]   = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiFetch('/api/vendors?limit=500').then(r => r.json()).then(d => setVendors(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])));
@@ -60,9 +62,26 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
   const disc = Number(discount || 0);
   const net = gross - disc + taxTotal;
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!date) e.date = 'Date is required.';
+    const discErr = validatePositive(disc, 'Header discount'); if (discErr) e.discount = discErr;
+    const validLines = lines.filter(l => l.description);
+    if (!validLines.length) e.lines = 'At least one product line is required.';
+    lines.forEach((l, i) => {
+      if (!l.description) return;
+      const qtyErr = validatePositive(l.quantity, 'Quantity'); if (qtyErr) e[`qty_${i}`] = qtyErr;
+      const priceErr = validatePositive(l.unit_price, 'Unit price'); if (priceErr) e[`price_${i}`] = priceErr;
+      const discPctErr = validatePercent(l.discount_pct, 'Discount %'); if (discPctErr) e[`disc_${i}`] = discPctErr;
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError('');
-    if (!vendorId) { setError('Vendor is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = { vendor_id: Number(vendorId), date, reference: reference || null, notes: notes || null, discount: disc, lines: lines.filter(l => l.description) };
@@ -85,11 +104,13 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
             {error && <div className="rounded bg-red-50 p-3 text-sm text-red-700">{error}</div>}
             <div className="grid grid-cols-3 gap-4">
               <div><label className="label">Vendor *</label>
-                <select className="input" value={vendorId} onChange={e => setVendorId(e.target.value)} required>
+                <select className={`input ${errors.vendor ? 'border-red-500' : ''}`} value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Select vendor…</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
-                </select></div>
-              <div><label className="label">Date</label><input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} required /></div>
+                </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}</div>
+              <div><label className="label">Date *</label><input type="date" className={`input ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}</div>
               <div><label className="label">Reference</label><input className="input" value={reference} onChange={e => setReference(e.target.value)} /></div>
               <div className="col-span-3"><label className="label">Notes</label><input className="input" value={notes} onChange={e => setNotes(e.target.value)} /></div>
             </div>
@@ -108,9 +129,9 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
                         <option value="">–</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
                       <td className="table-td"><input className="input py-1 text-xs" value={l.description} onChange={e => updateLine(i, { description: e.target.value })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className="input py-1 text-xs text-right w-full" value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className="input py-1 text-xs text-right w-full" value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" max="100" step="any" className="input py-1 text-xs text-right w-full" value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right w-full ${errors[`qty_${i}`] ? 'border-red-500' : ''}`} value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right w-full ${errors[`price_${i}`] ? 'border-red-500' : ''}`} value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} /></td>
+                      <td className="table-td"><input type="number" min="0" max="100" step="any" className={`input py-1 text-xs text-right w-full ${errors[`disc_${i}`] ? 'border-red-500' : ''}`} value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} /></td>
                       <td className="table-td"><select className="input py-1 text-xs" value={l.tax_id ?? ''} onChange={e => { const tid = e.target.value ? Number(e.target.value) : null; setLines(prev => { const n=[...prev]; n[i]={...n[i],tax_id:tid,tax_amount:lineTax({...n[i],tax_id:tid},taxes)}; return n; }); }}>
                         <option value="">None</option>{taxes.map(t => <option key={t.id} value={t.id}>{t.name} ({t.rate}%)</option>)}
                       </select></td>
@@ -122,13 +143,17 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
                 </tbody>
               </table>
               <button type="button" onClick={() => setLines(prev => [...prev, emptyLine()])} className="mt-2 text-sm text-indigo-600 hover:underline">+ Add Line</button>
+              {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
             </div>
             <div className="flex justify-end">
               <div className="w-64 space-y-1 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Gross Amount</span><span>{gross.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Tax Amount</span><span>{taxTotal.toFixed(2)}</span></div>
                 <div className="flex justify-between items-center"><span className="text-gray-500">Header Discount</span>
-                  <input type="number" min="0" step="any" className="input py-0.5 text-xs w-28 text-right" value={discount} onChange={e => setDiscount(e.target.value)} /></div>
+                  <div>
+                    <input type="number" min="0" step="any" className={`input py-0.5 text-xs w-28 text-right ${errors.discount ? 'border-red-500' : ''}`} value={discount} onChange={e => setDiscount(e.target.value)} />
+                    {errors.discount && <p className="text-xs text-red-500 mt-1">{errors.discount}</p>}
+                  </div></div>
                 <div className="flex justify-between font-semibold border-t pt-1"><span>Net Amount</span><span>{net.toFixed(2)}</span></div>
               </div>
             </div>

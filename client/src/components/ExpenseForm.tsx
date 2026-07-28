@@ -8,6 +8,7 @@ import { getBankAccountsLookup } from '../api/bankAccounts';
 import type { Vendor } from '../types/vendor';
 import { getVendors } from '../api/vendors';
 import { createExpense, updateExpense } from '../api/expenses';
+import { validatePositive } from '../utils/validators';
 
 interface Props {
   expense: Expense | null;
@@ -69,11 +70,24 @@ export default function ExpenseForm({ expense, onClose, onSaved }: Props) {
 
   const grossTotal = lines.reduce((s, l) => s + (parseFloat(String(l.amount)) || 0), 0);
 
-  async function handleSave(continueEdit = false) {
-    if (!bankAccountId) { setPayFromErr(true); setError('Pay From is required'); return; }
-    if (!date)          { setError('Date is required'); return; }
+  function validate(): string | null {
+    if (!bankAccountId) { setPayFromErr(true); return 'Pay From is required'; }
+    if (!date) return 'Date is required';
     const validLines = lines.filter((l) => l.account_id && (parseFloat(String(l.amount)) || 0) > 0);
-    if (!validLines.length) { setError('At least one expense line with account and amount is required'); return; }
+    if (!validLines.length) return 'At least one expense line with account and amount is required';
+    for (const l of lines) {
+      if (!l.account_id) continue;
+      const amtErr = validatePositive(parseFloat(String(l.amount)) || 0, 'Expense amount');
+      if (amtErr) return amtErr;
+    }
+    return null;
+  }
+
+  async function handleSave(continueEdit = false) {
+    setPayFromErr(false);
+    const validationError = validate();
+    if (validationError) { setError(validationError); return; }
+    const validLines = lines.filter((l) => l.account_id && (parseFloat(String(l.amount)) || 0) > 0);
 
     setSaving(true); setError('');
     try {

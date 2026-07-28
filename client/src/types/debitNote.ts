@@ -3,6 +3,7 @@ export type DNStatus = 'draft' | 'approved' | 'cancelled';
 export interface DebitNoteAllocation {
   id?: number;
   debit_note_id?: number;
+  purchase_invoice_id?: number | null;
   invoice_ref: string;
   description: string;
   amount: number | '';

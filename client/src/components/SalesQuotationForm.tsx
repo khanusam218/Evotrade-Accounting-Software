@@ -4,6 +4,7 @@ import { createSalesQuotation, getSalesQuotation, updateSalesQuotation, getNextQ
 import type { SalesQuotation, SalesQuotationLine } from '../types/salesQuotation';
 import { SQ_STATUS_LABELS, SQ_STATUS_COLORS } from '../types/salesQuotation';
 import QuickAddModal from './QuickAddModal';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Props { quotation: SalesQuotation | null; onClose: () => void; onSaved: () => void; }
 interface Customer { id: number; print_name: string; }
@@ -46,6 +47,8 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
   const [lines,        setLines]        = useState<SalesQuotationLine[]>([emptyLine()]);
   const [attachFiles,    setAttachFiles]    = useState<AttachFile[]>([]);
   const [showQuickAdd,   setShowQuickAdd]   = useState(false);
+  const [errors, setErrors] = useState<{ customerId?: string; date?: string; expiryDate?: string; lines?: string; discountPct?: string; shippingCharges?: string }>({});
+  const [lineErrors, setLineErrors] = useState<Record<number, string>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -97,10 +100,37 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
     if (fileRef.current) fileRef.current.value = '';
   }
 
+  function validate(): boolean {
+    const errs: typeof errors = {};
+    if (!customerId) errs.customerId = 'Customer is required.';
+    if (!date) errs.date = 'Date is required.';
+    if (!expiryDate) errs.expiryDate = 'Expiry date is required.';
+    else if (date && expiryDate < date) errs.expiryDate = 'Expiry date cannot be before the quotation date.';
+    const discErr = validatePercent(discountPct, 'Discount'); if (discErr) errs.discountPct = discErr;
+    const shipErr = validatePositive(shippingCharges, 'Shipping charges'); if (shipErr) errs.shippingCharges = shipErr;
+
+    const activeLines = lines.filter(l => l.description.trim());
+    if (activeLines.length === 0) errs.lines = 'At least one line with a description is required.';
+
+    const lErrs: Record<number, string> = {};
+    lines.forEach((l, i) => {
+      if (!l.description.trim()) return;
+      if (!(Number(l.quantity) > 0)) lErrs[i] = 'Quantity must be greater than 0.';
+      else if (Number(l.unit_price) < 0) lErrs[i] = 'Unit price cannot be negative.';
+      else {
+        const discE = validatePercent(Number(l.discount_pct), 'Discount'); if (discE) lErrs[i] = discE;
+      }
+    });
+    setLineErrors(lErrs);
+    if (Object.keys(lErrs).length > 0 && !errs.lines) errs.lines = 'Fix the highlighted line item errors below.';
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError(null);
-    if (!customerId) { setError('Customer is required'); return; }
-    if (!lines.some(l => l.description.trim())) { setError('At least one line with a description is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
@@ -160,10 +190,11 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
             <div className="flex gap-4 items-end">
               <div className="flex-1">
                 <label className="label">Customer <span className="text-red-500">*</span></label>
-                <select className="input w-full" value={customerId} onChange={e => setCustomerId(e.target.value)} required>
+                <select className={`input w-full ${errors.customerId ? 'border-red-500' : ''}`} value={customerId} onChange={e => { setCustomerId(e.target.value); setErrors(p => ({ ...p, customerId: undefined })); }} required>
                   <option value="">Type to search customer…</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                 </select>
+                {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
               </div>
               <div className="w-40 shrink-0">
                 <label className="label">Number <span className="text-red-500">*</span></label>
@@ -172,17 +203,20 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
               </div>
               <div className="w-36 shrink-0">
                 <label className="label">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} required />
+                <input type="date" className={`input ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => { setDate(e.target.value); setErrors(p => ({ ...p, date: undefined })); }} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div className="w-36 shrink-0">
                 <label className="label">Expiry Date <span className="text-red-500">*</span></label>
-                <input type="date" className="input" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
+                <input type="date" className={`input ${errors.expiryDate ? 'border-red-500' : ''}`} value={expiryDate} onChange={e => { setExpiryDate(e.target.value); setErrors(p => ({ ...p, expiryDate: undefined })); }} required />
+                {errors.expiryDate && <p className="text-xs text-red-500 mt-1">{errors.expiryDate}</p>}
               </div>
               <div className="w-36 shrink-0">
                 <label className="label">Reference</label>
                 <input className="input" placeholder="Reference" value={reference} onChange={e => setReference(e.target.value)} />
               </div>
             </div>
+            {errors.lines && <div className="rounded bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{errors.lines}</div>}
 
             {/* ── Subject ── */}
             <div>
@@ -236,18 +270,18 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
                             onChange={e => updateLine(i, 'description', e.target.value)} />
                         </td>
                         <td className="table-td">
-                          <input type="number" className="input w-full text-right text-xs py-1"
+                          <input type="number" className={`input w-full text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={l.quantity} min="0.0001" step="0.0001"
                             onChange={e => updateLine(i, 'quantity', parseFloat(e.target.value) || 1)} />
                         </td>
                         <td className="table-td">
-                          <input type="number" className="input w-full text-right text-xs py-1"
+                          <input type="number" className={`input w-full text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={l.unit_price} min="0" step="0.0001"
                             onChange={e => updateLine(i, 'unit_price', parseFloat(e.target.value) || 0)} />
                         </td>
                         <td className="table-td">
                           <div className="flex items-center gap-1">
-                            <input type="number" className="input flex-1 text-right text-xs py-1"
+                            <input type="number" className={`input flex-1 text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
                               value={l.discount_pct} min="0" max="100" step="0.01"
                               onChange={e => updateLine(i, 'discount_pct', parseFloat(e.target.value) || 0)} />
                             <span className="text-gray-400 text-xs">%</span>
@@ -330,12 +364,13 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 justify-end">
                             <input type="number" min={0} max={100} step="0.01"
-                              className="input w-16 text-right text-xs py-1"
+                              className={`input w-16 text-right text-xs py-1 ${errors.discountPct ? 'border-red-500' : ''}`}
                               value={discountPct}
-                              onChange={e => setDiscountPct(parseFloat(e.target.value) || 0)} />
+                              onChange={e => { setDiscountPct(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, discountPct: undefined })); }} />
                             <span className="text-gray-500 text-xs">%</span>
                             <span className="font-mono text-sm w-20 text-right">{fmt(discAmount)}</span>
                           </div>
+                          {errors.discountPct && <p className="text-xs text-red-500 mt-1 text-right">{errors.discountPct}</p>}
                         </td>
                       </tr>
                       <tr className="bg-gray-50">
@@ -346,9 +381,9 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
                         <td className="px-4 py-3 font-medium text-gray-700">Shipping Charges</td>
                         <td className="px-4 py-3 flex justify-end">
                           <input type="number" min={0} step="0.01"
-                            className="input w-28 text-right text-xs py-1"
+                            className={`input w-28 text-right text-xs py-1 ${errors.shippingCharges ? 'border-red-500' : ''}`}
                             value={shippingCharges}
-                            onChange={e => setShipping(parseFloat(e.target.value) || 0)} />
+                            onChange={e => { setShipping(parseFloat(e.target.value) || 0); setErrors(p => ({ ...p, shippingCharges: undefined })); }} />
                         </td>
                       </tr>
                       <tr className="bg-indigo-50">

@@ -10,6 +10,7 @@ import { getAccountsLookup } from '../api/accounts';
 import { getBankAccountsLookup } from '../api/bankAccounts';
 import { createOtherCollection, updateOtherCollection } from '../api/otherCollections';
 import { createOtherPayment, updateOtherPayment } from '../api/otherPayments';
+import { validateName } from '../utils/validators';
 
 interface Props {
   mode: 'collection' | 'payment';
@@ -67,7 +68,7 @@ export default function OtherTransactionForm({ mode, record, onClose, onSaved }:
   function validate() {
     const e: Record<string, string> = {};
     if (!date)              e.date    = 'Date is required';
-    if (!contactName.trim()) e.contact = 'Contact name is required';
+    const contactErr = validateName(contactName, 'Contact name'); if (contactErr) e.contact = contactErr;
     if (!bankAccountId)     e.bank    = `${bankLabel} is required`;
     const validAdjs = adjustments.filter((a) => a.account_id && (parseFloat(String(a.amount)) || 0) > 0);
     if (!validAdjs.length)  e.adjs    = 'At least one account adjustment with amount is required';

@@ -52,8 +52,3 @@ export async function getVendorCategories(): Promise<VendorCategory[]> {
   const { data } = await api.get<VendorCategory[]>('/vendor-categories');
   return data;
 }
-
-export async function createVendorCategory(name: string): Promise<VendorCategory> {
-  const { data } = await api.post<VendorCategory>('/vendor-categories', { name });
-  return data;
-}

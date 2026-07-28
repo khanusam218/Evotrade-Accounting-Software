@@ -4,6 +4,7 @@ import type { Account } from '../types/account';
 import type { DebitNote, DNFormData } from '../types/debitNote';
 import { getAccountsLookup } from '../api/accounts';
 import { createDebitNote, getDebitNote, getNextDNNumber, updateDebitNote } from '../api/debitNotes';
+import { validateName } from '../utils/validators';
 
 interface PurchaseInvoice {
   id: number;
@@ -140,8 +141,10 @@ export default function DebitNoteForm({ debitNote, onClose, onSaved }: Props) {
     getDebitNote(debitNote.id).then((full) => {
       if (full.allocations?.length) {
         const amounts: Record<number, string> = {};
-        full.allocations.forEach((al, idx) => {
-          if (parseFloat(String(al.amount)) > 0) amounts[idx] = String(al.amount);
+        full.allocations.forEach((al) => {
+          if (al.purchase_invoice_id && parseFloat(String(al.amount)) > 0) {
+            amounts[al.purchase_invoice_id] = String(al.amount);
+          }
         });
         setAllocAmounts(amounts);
       }
@@ -172,7 +175,7 @@ export default function DebitNoteForm({ debitNote, onClose, onSaved }: Props) {
   function validate() {
     const e: Record<string, string> = {};
     if (!date)               e.date    = 'Date is required';
-    if (!contactName.trim()) e.contact = 'Contact is required';
+    const contactErr = validateName(contactName, 'Contact'); if (contactErr) e.contact = contactErr;
     if (!accountId)          e.account = 'Account is required';
     if (!amount || totalAmt <= 0) e.amount = 'Amount must be greater than zero';
     if (totalAllocated > totalAmt && totalAmt > 0) e.alloc = 'Allocations exceed debit note amount';
@@ -185,6 +188,7 @@ export default function DebitNoteForm({ debitNote, onClose, onSaved }: Props) {
     const allocations = openInvoices
       .filter((inv) => parseFloat(allocAmounts[inv.id] || '0') > 0)
       .map((inv) => ({
+        purchase_invoice_id: inv.id,
         invoice_ref:  inv.number,
         description:  inv.subject || '',
         amount:       parseFloat(allocAmounts[inv.id] || '0'),

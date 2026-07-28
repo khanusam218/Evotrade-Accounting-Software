@@ -5,6 +5,7 @@ import {
   completeDisassemblyOrder, cancelDisassemblyOrder, deleteDisassemblyOrder,
 } from '../api/disassemblyOrders';
 import { DisassemblyOrder, DisassemblyLine } from '../types/disassemblyOrder';
+import { validatePositive } from '../utils/validators';
 
 interface Warehouse { id: number; name: string; }
 interface Product   { id: number; name: string; }
@@ -64,17 +65,23 @@ function exportDisassemblingsToExcel(rows: DisassemblyOrder[]) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
+type LineErrors = Partial<Record<'quantity' | 'cost', string>>;
+
 /* ─── Lines table (reusable for Input & Output) ──────────────────────────── */
 function LinesTable({
-  lines, setLines, products, showCostInput,
+  lines, setLines, products, showCostInput, lineErrors, setLineErrors,
 }: {
   lines: Partial<DisassemblyLine>[];
   setLines: (fn: (prev: Partial<DisassemblyLine>[]) => Partial<DisassemblyLine>[]) => void;
   products: Product[];
   showCostInput: boolean;  /* false = Input section (Batch+Cost read-only), true = Output */
+  lineErrors: LineErrors[];
+  setLineErrors: (fn: (prev: LineErrors[]) => LineErrors[]) => void;
 }) {
-  const setLine = (i: number, k: keyof DisassemblyLine, v: any) =>
+  const setLine = (i: number, k: keyof DisassemblyLine, v: any) => {
     setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
+    setLineErrors(prev => prev.map((le, j) => j === i ? {} : le));
+  };
 
   const amount = (l: Partial<DisassemblyLine>) =>
     Number(l.quantity || 0) * Number(l.cost || 0);
@@ -125,20 +132,24 @@ function LinesTable({
               <td className="border border-gray-300 px-1 py-1.5 bg-white">
                 <input
                   type="number"
-                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`}
                   value={l.quantity ?? 0}
                   onChange={e => setLine(i, 'quantity', Number(e.target.value))} />
+                {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
               </td>
 
               {/* Cost — gray/read-only in Input; editable in Output */}
               <td className={`border border-gray-300 px-2 py-1.5 ${!showCostInput ? 'bg-gray-100' : 'bg-white'}`}>
                 {showCostInput ? (
-                  <input
-                    type="number"
-                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    placeholder="Cost"
-                    value={l.cost ?? 0}
-                    onChange={e => setLine(i, 'cost', Number(e.target.value))} />
+                  <>
+                    <input
+                      type="number"
+                      className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.cost ? 'border-red-500' : 'border-gray-300'}`}
+                      placeholder="Cost"
+                      value={l.cost ?? 0}
+                      onChange={e => setLine(i, 'cost', Number(e.target.value))} />
+                    {lineErrors[i]?.cost && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].cost}</p>}
+                  </>
                 ) : (
                   <span className="block text-right text-sm text-gray-500 pr-1">
                     {Number(l.cost || 0).toFixed(2)}
@@ -160,7 +171,7 @@ function LinesTable({
                     </svg>
                   </button>
                   <button type="button" title="Remove"
-                    onClick={() => setLines(ls => ls.filter((_, j) => j !== i))}
+                    onClick={() => { setLines(ls => ls.filter((_, j) => j !== i)); setLineErrors(prev => prev.filter((_, j) => j !== i)); }}
                     className="text-gray-400 hover:text-red-500">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -194,14 +205,53 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
   const [outputLines, setOutputLines] = useState<Partial<DisassemblyLine>[]>(
     initial?.lines?.length ? initial.lines : [{ ...EMPTY_LINE }]
   );
+  const [inputLineErrors, setInputLineErrors]   = useState<LineErrors[]>([]);
+  const [outputLineErrors, setOutputLineErrors] = useState<LineErrors[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ product_id?: string; warehouse_id?: string; date?: string; quantity?: string; input_lines?: string; output_lines?: string }>({});
 
   const status = initial?.status || 'draft';
 
+  function validate(): boolean {
+    const e: typeof fieldErrors = {};
+    if (!form.product_id) e.product_id = 'Product to disassemble is required.';
+    if (!form.warehouse_id) e.warehouse_id = 'Warehouse is required.';
+    if (!form.date) e.date = 'Date is required.';
+    const qtyErr = validatePositive(Number(form.quantity), 'Quantity to disassemble'); if (qtyErr) e.quantity = qtyErr;
+
+    const validInputs = inputLines.filter(l => l.product_id);
+    if (validInputs.length === 0) e.input_lines = 'At least one input line with a product is required.';
+    const ile: LineErrors[] = inputLines.map(l => {
+      if (!l.product_id) return {};
+      const le: LineErrors = {};
+      const qErr = validatePositive(Number(l.quantity || 0), 'Quantity'); if (qErr) le.quantity = qErr;
+      return le;
+    });
+    if (ile.some(x => Object.keys(x).length > 0)) e.input_lines = e.input_lines || 'Please fix the errors in the input lines.';
+
+    const validOutputs = outputLines.filter(l => l.product_id);
+    if (validOutputs.length === 0) e.output_lines = 'At least one output line with a product is required.';
+    const ole: LineErrors[] = outputLines.map(l => {
+      if (!l.product_id) return {};
+      const le: LineErrors = {};
+      const qErr = validatePositive(Number(l.quantity || 0), 'Quantity'); if (qErr) le.quantity = qErr;
+      const cErr = validatePositive(Number(l.cost || 0), 'Cost'); if (cErr) le.cost = cErr;
+      return le;
+    });
+    if (ole.some(x => Object.keys(x).length > 0)) e.output_lines = e.output_lines || 'Please fix the errors in the output lines.';
+
+    setFieldErrors(e);
+    setInputLineErrors(ile);
+    setOutputLineErrors(ole);
+    return Object.keys(e).length === 0;
+  }
+
   const submit = async () => {
-    setSaving(true); setError('');
+    setError('');
+    if (!validate()) return;
+    setSaving(true);
     try {
       await onSave({
         ...form,
@@ -250,12 +300,13 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
                   Product To Disassemble <span className="text-red-500">*</span>
                 </label>
                 <select
-                  className="w-full border-2 border-red-400 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-red-400"
+                  className={`w-full border-2 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-red-400 ${fieldErrors.product_id ? 'border-red-600' : 'border-red-400'}`}
                   value={form.product_id}
-                  onChange={e => setForm(f => ({ ...f, product_id: e.target.value }))}>
+                  onChange={e => { setForm(f => ({ ...f, product_id: e.target.value })); setFieldErrors(prev => ({ ...prev, product_id: undefined })); }}>
                   <option value="">Type to search as</option>
                   {products.map((p: Product) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
+                {fieldErrors.product_id && <p className="text-xs text-red-500 mt-1">{fieldErrors.product_id}</p>}
               </div>
 
               {/* Number — green + button | input | green ↺ button */}
@@ -295,9 +346,10 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
                 </label>
                 <input
                   type="date"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={form.date}
-                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+                  onChange={e => { setForm(f => ({ ...f, date: e.target.value })); setFieldErrors(prev => ({ ...prev, date: undefined })); }} />
+                {fieldErrors.date && <p className="text-xs text-red-500 mt-1">{fieldErrors.date}</p>}
               </div>
 
               {/* Quantity to disassemble */}
@@ -307,9 +359,10 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
                 </label>
                 <input
                   type="number"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.quantity ? 'border-red-500' : 'border-gray-300'}`}
                   value={form.quantity}
-                  onChange={e => setForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
+                  onChange={e => { setForm(f => ({ ...f, quantity: Number(e.target.value) })); setFieldErrors(prev => ({ ...prev, quantity: undefined })); }} />
+                {fieldErrors.quantity && <p className="text-xs text-red-500 mt-1">{fieldErrors.quantity}</p>}
               </div>
 
               {/* Reference */}
@@ -331,12 +384,13 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
               <h3 className="text-base font-bold text-gray-900">Input</h3>
               <button
                 type="button"
-                onClick={() => setInputLines(ls => [...ls, { ...EMPTY_LINE }])}
+                onClick={() => { setInputLines(ls => [...ls, { ...EMPTY_LINE }]); setInputLineErrors(prev => [...prev, {}]); }}
                 className="text-sm font-medium text-blue-600 hover:text-blue-800">
                 + Add
               </button>
             </div>
-            <LinesTable lines={inputLines} setLines={setInputLines} products={products} showCostInput={false} />
+            {fieldErrors.input_lines && <p className="text-xs text-red-500 mb-2">{fieldErrors.input_lines}</p>}
+            <LinesTable lines={inputLines} setLines={setInputLines} products={products} showCostInput={false} lineErrors={inputLineErrors} setLineErrors={setInputLineErrors} />
           </div>
 
           {/* ── Account Expenses ── */}
@@ -358,25 +412,29 @@ function DSForm({ onSave, onClose, initial, warehouses, products }: any) {
               <h3 className="text-base font-bold text-gray-900">Output</h3>
               <button
                 type="button"
-                onClick={() => setOutputLines(ls => [...ls, { ...EMPTY_LINE }])}
+                onClick={() => { setOutputLines(ls => [...ls, { ...EMPTY_LINE }]); setOutputLineErrors(prev => [...prev, {}]); }}
                 className="text-sm font-medium text-blue-600 hover:text-blue-800">
                 + Add
               </button>
             </div>
-            <LinesTable lines={outputLines} setLines={setOutputLines} products={products} showCostInput={true} />
+            {fieldErrors.output_lines && <p className="text-xs text-red-500 mb-2">{fieldErrors.output_lines}</p>}
+            <LinesTable lines={outputLines} setLines={setOutputLines} products={products} showCostInput={true} lineErrors={outputLineErrors} setLineErrors={setOutputLineErrors} />
           </div>
 
           {/* ── Warehouse / Notes ── */}
           <div className="px-6 pb-6 pt-4 grid grid-cols-2 gap-4 border-t border-gray-100">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Warehouse</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Warehouse <span className="text-red-500">*</span>
+              </label>
               <select
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className={`w-full border rounded px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 ${fieldErrors.warehouse_id ? 'border-red-500' : 'border-gray-300'}`}
                 value={form.warehouse_id}
-                onChange={e => setForm(f => ({ ...f, warehouse_id: e.target.value }))}>
+                onChange={e => { setForm(f => ({ ...f, warehouse_id: e.target.value })); setFieldErrors(prev => ({ ...prev, warehouse_id: undefined })); }}>
                 <option value="">Select...</option>
                 {warehouses.map((w: Warehouse) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
+              {fieldErrors.warehouse_id && <p className="text-xs text-red-500 mt-1">{fieldErrors.warehouse_id}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
@@ -464,8 +522,10 @@ export default function DisassemblyPage() {
     fetchOrders();
   };
 
-  const doAction = async (fn: () => Promise<any>) => {
+  const doAction = async (id: number, fn: () => Promise<any>) => {
+    setActionId(id);
     try { await fn(); fetchOrders(); } catch (e: any) { setError(e.message); }
+    finally { setActionId(null); }
   };
 
   if (showForm) return (
@@ -590,7 +650,7 @@ export default function DisassemblyPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => doAction(() => completeDisassemblyOrder(o.id))}
+                              onClick={() => doAction(o.id, () => completeDisassemblyOrder(o.id))}
                               disabled={actionId === o.id}
                               title="Complete"
                               className="text-gray-400 hover:text-green-600 disabled:opacity-40">
@@ -599,7 +659,7 @@ export default function DisassemblyPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => doAction(() => cancelDisassemblyOrder(o.id))}
+                              onClick={() => doAction(o.id, () => cancelDisassemblyOrder(o.id))}
                               disabled={actionId === o.id}
                               title="Cancel"
                               className="text-gray-400 hover:text-orange-500 disabled:opacity-40">
@@ -608,7 +668,7 @@ export default function DisassemblyPage() {
                               </svg>
                             </button>
                             <button
-                              onClick={() => { if (window.confirm(`Delete "${o.number}"?`)) doAction(() => deleteDisassemblyOrder(o.id)); }}
+                              onClick={() => { if (window.confirm(`Delete "${o.number}"?`)) doAction(o.id, () => deleteDisassemblyOrder(o.id)); }}
                               disabled={actionId === o.id}
                               title="Delete"
                               className="text-gray-400 hover:text-red-600 disabled:opacity-40">

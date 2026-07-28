@@ -1,5 +1,6 @@
 ﻿import { apiFetch } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
+import { validateCNIC, validateEmail, validateName, validateNTN, validatePhone } from '../utils/validators';
 
 interface Courier {
   id: number; code: string; print_name: string; courier_name?: string;
@@ -37,6 +38,7 @@ function CourierForm({ initial, onSave, onClose }: { initial: Courier | null; on
   const [error, setError]     = useState('');
   const [nextCode, setNextCode] = useState(initial?.code || 'COU-000001');
   const [image, setImage]     = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const fileRef               = useRef<HTMLInputElement>(null);
   const attachRef             = useRef<HTMLInputElement>(null);
 
@@ -57,7 +59,16 @@ function CourierForm({ initial, onSave, onClose }: { initial: Courier | null; on
   };
 
   const submit = async (andNew: boolean) => {
-    if (!form.print_name?.trim()) { setError('Courier Name is required'); return; }
+    const errs: Record<string, string> = {};
+    const nameErr = validateName(form.print_name || '', 'Courier Name'); if (nameErr) errs.print_name = nameErr;
+    const emailErr = validateEmail(form.email || ''); if (emailErr) errs.email = emailErr;
+    const phoneErr = validatePhone(form.phone || ''); if (phoneErr) errs.phone = phoneErr;
+    const phone2Err = validatePhone(form.phone2 || ''); if (phone2Err) errs.phone2 = phone2Err;
+    const phone3Err = validatePhone(form.phone3 || ''); if (phone3Err) errs.phone3 = phone3Err;
+    const ntnErr = validateNTN(form.ntn || ''); if (ntnErr) errs.ntn = ntnErr;
+    const cnicErr = validateCNIC(form.cnic || ''); if (cnicErr) errs.cnic = cnicErr;
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true); setError('');
     try {
       await onSave({ ...form, code: nextCode });
@@ -131,7 +142,8 @@ function CourierForm({ initial, onSave, onClose }: { initial: Courier | null; on
                 </div>
                 <div className="flex-1">
                   <label className={lbl}>Courier Name <span className="text-red-500">*</span></label>
-                  <input className={inp} placeholder="Courier Name" value={form.print_name || ''} onChange={e => set('print_name', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.print_name ? 'border-red-500' : ''}`} placeholder="Courier Name" value={form.print_name || ''} onChange={e => set('print_name', e.target.value)} />
+                  {fieldErrors.print_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.print_name}</p>}
                 </div>
                 {/* Profile image */}
                 <div className="flex-shrink-0 flex flex-col items-center gap-2">
@@ -166,19 +178,23 @@ function CourierForm({ initial, onSave, onClose }: { initial: Courier | null; on
               <div className="grid grid-cols-4 gap-4">
                 <div>
                   <label className={lbl}>Email</label>
-                  <input type="email" className={inp} placeholder="Email" value={form.email || ''} onChange={e => set('email', e.target.value)} />
+                  <input type="email" className={`${inp} ${fieldErrors.email ? 'border-red-500' : ''}`} placeholder="Email" value={form.email || ''} onChange={e => set('email', e.target.value)} />
+                  {fieldErrors.email && <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>}
                 </div>
                 <div>
                   <label className={lbl}>Phone 1</label>
-                  <input className={inp} placeholder="Phone 1" value={form.phone || ''} onChange={e => set('phone', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.phone ? 'border-red-500' : ''}`} placeholder="Phone 1" value={form.phone || ''} onChange={e => set('phone', e.target.value)} />
+                  {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
                 </div>
                 <div>
                   <label className={lbl}>Phone 2</label>
-                  <input className={inp} placeholder="Phone 2" value={form.phone2 || ''} onChange={e => set('phone2', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.phone2 ? 'border-red-500' : ''}`} placeholder="Phone 2" value={form.phone2 || ''} onChange={e => set('phone2', e.target.value)} />
+                  {fieldErrors.phone2 && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone2}</p>}
                 </div>
                 <div>
                   <label className={lbl}>Phone 3</label>
-                  <input className={inp} placeholder="Phone 3" value={form.phone3 || ''} onChange={e => set('phone3', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.phone3 ? 'border-red-500' : ''}`} placeholder="Phone 3" value={form.phone3 || ''} onChange={e => set('phone3', e.target.value)} />
+                  {fieldErrors.phone3 && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone3}</p>}
                 </div>
               </div>
 
@@ -261,11 +277,13 @@ function CourierForm({ initial, onSave, onClose }: { initial: Courier | null; on
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-green-600 mb-1">NTN</label>
-                  <input className={inp} placeholder="NTN" value={form.ntn || ''} onChange={e => set('ntn', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.ntn ? 'border-red-500' : ''}`} placeholder="NTN" value={form.ntn || ''} onChange={e => set('ntn', e.target.value)} />
+                  {fieldErrors.ntn && <p className="text-xs text-red-500 mt-1">{fieldErrors.ntn}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-green-600 mb-1">CNIC</label>
-                  <input className={inp} placeholder="CNIC" value={form.cnic || ''} onChange={e => set('cnic', e.target.value)} />
+                  <input className={`${inp} ${fieldErrors.cnic ? 'border-red-500' : ''}`} placeholder="CNIC" value={form.cnic || ''} onChange={e => set('cnic', e.target.value)} />
+                  {fieldErrors.cnic && <p className="text-xs text-red-500 mt-1">{fieldErrors.cnic}</p>}
                 </div>
               </div>
             </div>

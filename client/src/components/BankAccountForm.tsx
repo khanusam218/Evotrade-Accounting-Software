@@ -3,6 +3,7 @@ import type { Account } from '../types/account';
 import type { BankAccount, BankAccountFormData, AccountGroup } from '../types/bankAccount';
 import { getAccountsLookup } from '../api/accounts';
 import { createBankAccount, updateBankAccount } from '../api/bankAccounts';
+import { validateName } from '../utils/validators';
 
 interface Props {
   account: BankAccount | null;
@@ -78,10 +79,10 @@ export default function BankAccountForm({ account, onClose, onSaved }: Props) {
     const e: typeof errors = {};
     if (!form.parent_id)        e.parent_id     = 'Parent account is required';
     if (!form.code.trim())      e.code          = 'Account code is required';
-    if (!form.name.trim())      e.name          = 'Account name is required';
-    if (!form.bank_name.trim()) e.bank_name     = 'Bank name is required';
-    if (!form.branch_name.trim()) e.branch_name = 'Branch name is required';
-    if (!form.account_holder.trim()) e.account_holder = 'Bank account title is required';
+    const nameErr = validateName(form.name, 'Account name'); if (nameErr) e.name = nameErr;
+    const bankNameErr = validateName(form.bank_name, 'Bank name'); if (bankNameErr) e.bank_name = bankNameErr;
+    const branchNameErr = validateName(form.branch_name, 'Branch name'); if (branchNameErr) e.branch_name = branchNameErr;
+    const holderErr = validateName(form.account_holder, 'Bank account title'); if (holderErr) e.account_holder = holderErr;
     if (!form.account_number.trim()) e.account_number = 'Bank account number is required';
     setErrors(e);
     return !Object.keys(e).length;

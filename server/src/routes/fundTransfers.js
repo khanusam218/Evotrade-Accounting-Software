@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateFTNumber(client) {
+  await getOrCreateSeries(client, 'Fund Transfers', 'FT-', 6);
   const { rows } = await client.query(
     `UPDATE number_series
         SET next_number = next_number + 1
@@ -175,6 +178,15 @@ router.post('/:id/post', async (req, res, next) => {
       [toChange, toCoa.id]
     );
 
+    await postJournalEntry(client, {
+      date: ft.date, memo: `Fund Transfer ${ft.number}`, reference: ft.number,
+      source_type: 'FundTransfer', source_id: ft.id,
+      lines: [
+        changeToLine(toCoa,   toChange,   `Fund Transfer ${ft.number}`),
+        changeToLine(fromCoa, fromChange, `Fund Transfer ${ft.number}`),
+      ],
+    });
+
     await client.query(`UPDATE fund_transfers SET status='posted' WHERE id=$1`, [ft.id]);
     await client.query('COMMIT');
 
@@ -218,6 +230,11 @@ router.post('/:id/cancel', async (req, res, next) => {
         'UPDATE chart_of_accounts SET current_balance = current_balance - $1 WHERE id = $2',
         [toChange, toCoa.id]
       );
+
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'FundTransfer', source_id: ft.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Fund Transfer ${ft.number}`,
+      });
     }
 
     await client.query(`UPDATE fund_transfers SET status='cancelled' WHERE id=$1`, [ft.id]);

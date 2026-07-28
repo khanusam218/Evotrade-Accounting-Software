@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PurchaseOrder, PurchaseOrderLine } from '../types/purchaseOrder';
 import { PO_STATUS_LABELS } from '../types/purchaseOrder';
 import { createPurchaseOrder, updatePurchaseOrder, getPurchaseOrder, getNextPurchaseOrderNumber } from '../api/purchaseOrders';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Vendor  { id: number; print_name: string; }
 interface Product { id: number; name: string; purchase_price: number; purchase_tax_id: number | null; sale_tax_id?: number | null; }
@@ -30,6 +31,7 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
   const [lines,        setLines]        = useState<PurchaseOrderLine[]>([emptyLine()]);
   const [saving,       setSaving]       = useState(false);
   const [error,        setError]        = useState('');
+  const [errors,       setErrors]       = useState<Record<string, string>>({});
 
   // QuickAdd (product search)
   const [showQuick,  setShowQuick]  = useState(false);
@@ -52,7 +54,8 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
       setReference(full.reference ?? '');
       setSubject(full.subject ?? '');
       setNotes(full.notes ?? '');
-      setDiscPct(String(full.discount ?? 0));
+      const grossAmt = Number(full.gross_amount ?? 0);
+      setDiscPct(grossAmt > 0 ? String((Number(full.discount ?? 0) / grossAmt) * 100) : '0');
       setLines(full.lines?.length ? full.lines : [emptyLine()]);
       setNextNum(full.number);
     });
@@ -97,13 +100,30 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
   const net      = gross - discAmt + taxTotal;
   const fmt      = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!date) e.date = 'Date is required.';
+    if (!receiptDate) e.receiptDate = 'Receipt date is required.';
+    const discErr = validatePercent(Number(discPct || 0), 'Discount'); if (discErr) e.discPct = discErr;
+    const validLines = lines.filter(l => l.product_id || l.description);
+    if (!validLines.length) e.lines = 'At least one product line is required.';
+    lines.forEach((l, i) => {
+      if (!(l.product_id || l.description)) return;
+      const qtyErr = validatePositive(l.quantity, 'Quantity'); if (qtyErr) e[`qty_${i}`] = qtyErr;
+      const priceErr = validatePositive(l.unit_price, 'Price'); if (priceErr) e[`price_${i}`] = priceErr;
+      const discPctErr = validatePercent(l.discount_pct, 'Discount %'); if (discPctErr) e[`disc_${i}`] = discPctErr;
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave(e: React.FormEvent, continueEdit = false) {
     e.preventDefault(); setError('');
-    if (!vendorId) { setError('Vendor is required'); return; }
-    const validLines = lines.filter(l => l.product_id || l.description);
-    if (!validLines.length) { setError('At least one product line is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
+      const validLines = lines.filter(l => l.product_id || l.description);
       const payload = {
         vendor_id: Number(vendorId), date,
         expected_date: receiptDate || null,
@@ -144,11 +164,12 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
             <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
-                <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <select className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.vendor ? 'border-red-500' : 'border-gray-300'}`}
                   value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Type to search vendor</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                 </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -165,13 +186,15 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                  value={receiptDate} onChange={e => setReceiptDate(e.target.value)} />
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.receiptDate ? 'border-red-500' : 'border-gray-300'}`}
+                  value={receiptDate} onChange={e => setReceiptDate(e.target.value)} required />
+                {errors.receiptDate && <p className="text-xs text-red-500 mt-1">{errors.receiptDate}</p>}
               </div>
             </div>
 
@@ -239,16 +262,16 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
                         </select>
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" step="any" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                        <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                           value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" step="any" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                        <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`price_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                           value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} />
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1">
-                          <input type="number" min="0" max="100" step="any" className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                          <input type="number" min="0" max="100" step="any" className={`flex-1 border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`disc_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} />
                           <span className="text-xs text-gray-500 flex-shrink-0">%</span>
                         </div>
@@ -274,6 +297,7 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
                 className="mt-2 text-sm text-green-600 hover:text-green-700 hover:underline font-medium">
                 + Add Line
               </button>
+              {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
             </div>
 
             {/* Comments + Totals */}
@@ -292,11 +316,12 @@ export default function PurchaseOrderForm({ order, onClose, onSaved }: Props) {
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Discount</span>
                     <div className="flex items-center gap-2">
-                      <input type="number" min="0" max="100" step="any" className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                      <input type="number" min="0" max="100" step="any" className={`w-16 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.discPct ? 'border-red-500' : 'border-gray-300'}`}
                         value={discPct} onChange={e => setDiscPct(e.target.value)} />
                       <span className="text-gray-500 text-xs">%</span>
                       <span className="font-mono text-gray-700 w-20 text-right">{fmt(discAmt)}</span>
                     </div>
+                    {errors.discPct && <p className="text-xs text-red-500 mt-1">{errors.discPct}</p>}
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Tax</span>

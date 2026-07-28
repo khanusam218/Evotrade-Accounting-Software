@@ -16,6 +16,7 @@ export interface SalesPerson {
   manager_name?: string | null;
   application_user_id?: number | null;
   application_user_email?: string | null;
+  application_user_login?: string | null;
   cash_account_id?: number | null;
   sale_order_series_id?: number | null;
   receive_payment_series_id?: number | null;
@@ -39,6 +40,7 @@ export interface SalesPersonFormData {
   receive_payment_series_id: string;
   manager_id: string;
   application_user_id: string;
+  branch_name: string;
 }
 
 export interface SalesPersonsResponse {

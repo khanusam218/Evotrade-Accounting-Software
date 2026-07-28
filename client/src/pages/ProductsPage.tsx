@@ -1,6 +1,8 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import ProductForm from '../components/ProductForm';
 import { createProduct, deleteProduct, getBrands, getProductCategories, getProducts } from '../api/products';
+import { getVendors } from '../api/vendors';
+import type { Vendor } from '../types/vendor';
 import type { Brand, Product, ProductCategory, ProductFilters, ProductType } from '../types/product';
 
 const PAGE_SIZE = 50;
@@ -44,12 +46,12 @@ const EditSVG       = () => <svg className="w-4 h-4" fill="none" stroke="current
 
 interface PendingFilters {
   code: string; name: string; type: string; category_id: string;
-  brand_id: string; is_active: string;
+  brand_id: string; principal_vendor_id: string; is_active: string;
   sale_price_from: string; sale_price_to: string;
 }
 const emptyFilters: PendingFilters = {
   code: '', name: '', type: '', category_id: '',
-  brand_id: '', is_active: '',
+  brand_id: '', principal_vendor_id: '', is_active: '',
   sale_price_from: '', sale_price_to: '',
 };
 
@@ -74,6 +76,7 @@ export default function ProductsPage() {
   const [error,      setError]      = useState<string | null>(null);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [brands,     setBrands]     = useState<Brand[]>([]);
+  const [vendors,    setVendors]    = useState<Vendor[]>([]);
   const [showForm,   setShowForm]   = useState(false);
   const [editTarget, setEditTarget] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -91,6 +94,7 @@ export default function ProductsPage() {
   useEffect(() => {
     getProductCategories().then(setCategories).catch(() => {});
     getBrands().then(setBrands).catch(() => {});
+    getVendors({ limit: 500 }).then(r => setVendors(r.data)).catch(() => {});
   }, []);
 
   const fetchProducts = useCallback(async () => {
@@ -114,6 +118,7 @@ export default function ProductsPage() {
       type:        pendingFilters.type        || undefined,
       category_id: pendingFilters.category_id || undefined,
       brand_id:    pendingFilters.brand_id    || undefined,
+      principal_vendor_id: pendingFilters.principal_vendor_id || undefined,
       is_active:   pendingFilters.is_active   || undefined,
     });
     setShowFilters(false);
@@ -237,6 +242,7 @@ export default function ProductsPage() {
           manage_purchase_tax: false,
           is_sold: true,
           sale_price: get(col('sale price')),
+          sale_tax_id: '',
           mrp: '',
           mrp_exclusive_of_tax: false,
           dont_allow_public: false,
@@ -269,10 +275,12 @@ export default function ProductsPage() {
 
   if (showForm) return (
         <ProductForm
+      key={editTarget ? editTarget.id : 'new'}
       product={editTarget}
       onClose={() => { setShowForm(false); setEditTarget(null); }}
       onSaved={handleFormSaved}
       onRefresh={fetchProducts}
+      onSavedAndNew={() => setEditTarget(null)}
     />
   );
 
@@ -401,8 +409,10 @@ export default function ProductsPage() {
                 {/* Principal */}
                 <div className="flex items-center gap-4">
                   <label className="w-36 shrink-0 text-sm font-medium text-gray-700">Principal</label>
-                  <select className={inputCls}>
+                  <select className={inputCls} value={pendingFilters.principal_vendor_id}
+                    onChange={e => setPendingFilters(f => ({ ...f, principal_vendor_id: e.target.value }))}>
                     <option value="">Select principal</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                   </select>
                 </div>
 

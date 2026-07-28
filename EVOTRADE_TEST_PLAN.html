@@ -1,0 +1,1021 @@
+<title>Evotrade End-to-End Test Plan — Al-Noor Electronics &amp; Trading Co.</title>
+<meta name="description" content="A full sequential business scenario with test data and expected results for every module in Evotrade Accounting Software.">
+<style>
+  :root{
+    --bg:#F5F7F5; --surface:#FFFFFF; --surface-2:#EFF3EF;
+    --ink:#1B2019; --muted:#5B655D; --line:#DBE2DC;
+    --accent:#2E6F4E; --accent-ink:#18402C; --accent-soft:#E3EFE7;
+    --amber:#93650F; --amber-soft:#F6ECD8; --amber-line:#E3CE9D;
+    --danger:#A23F36; --danger-soft:#F5E3E0; --danger-line:#E3B9B1;
+    --info:#2C5D85; --info-soft:#E2ECF3; --info-line:#B9CFE1;
+    --fixed:#2E6F4E; --fixed-soft:#E3EFE7; --fixed-line:#B9D8C6;
+    --shadow: 0 1px 2px rgba(20,30,22,.06), 0 4px 16px rgba(20,30,22,.05);
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", "Roboto Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#12140F; --surface:#181C16; --surface-2:#1F2419;
+      --ink:#E7ECE7; --muted:#9AA59B; --line:#2B322A;
+      --accent:#74C398; --accent-ink:#BEEBD2; --accent-soft:#1D3226;
+      --amber:#E4B466; --amber-soft:#332911; --amber-line:#5A4A22;
+      --danger:#E5948B; --danger-soft:#3A211E; --danger-line:#5C332D;
+      --info:#8FC1EA; --info-soft:#1C2C38; --info-line:#33546E;
+      --fixed:#74C398; --fixed-soft:#1D3226; --fixed-line:#2E5A41;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12140F; --surface:#181C16; --surface-2:#1F2419;
+    --ink:#E7ECE7; --muted:#9AA59B; --line:#2B322A;
+    --accent:#74C398; --accent-ink:#BEEBD2; --accent-soft:#1D3226;
+    --amber:#E4B466; --amber-soft:#332911; --amber-line:#5A4A22;
+    --danger:#E5948B; --danger-soft:#3A211E; --danger-line:#5C332D;
+    --info:#8FC1EA; --info-soft:#1C2C38; --info-line:#33546E;
+    --fixed:#74C398; --fixed-soft:#1D3226; --fixed-line:#2E5A41;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F7F5; --surface:#FFFFFF; --surface-2:#EFF3EF;
+    --ink:#1B2019; --muted:#5B655D; --line:#DBE2DC;
+    --accent:#2E6F4E; --accent-ink:#18402C; --accent-soft:#E3EFE7;
+    --amber:#93650F; --amber-soft:#F6ECD8; --amber-line:#E3CE9D;
+    --danger:#A23F36; --danger-soft:#F5E3E0; --danger-line:#E3B9B1;
+    --info:#2C5D85; --info-soft:#E2ECF3; --info-line:#B9CFE1;
+    --fixed:#2E6F4E; --fixed-soft:#E3EFE7; --fixed-line:#B9D8C6;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--sans);
+    font-size:15.5px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft); }
+
+  a{ color:var(--accent-ink); }
+  h1,h2,h3,h4{ font-family:var(--serif); font-weight:600; text-wrap:balance; color:var(--ink); }
+  code, .mono, .num, td.num, th.num { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+  .shell{ display:flex; min-height:100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .toc{
+    width:272px; flex-shrink:0; position:sticky; top:0; align-self:flex-start;
+    height:100vh; overflow-y:auto; border-right:1px solid var(--line);
+    background:var(--surface); padding:22px 16px 40px;
+  }
+  .toc .brand{ font-family:var(--serif); font-size:1.05rem; font-weight:700; margin:0 4px 2px; }
+  .toc .brand small{ display:block; font-family:var(--sans); font-weight:500; color:var(--muted); font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; margin-top:3px; }
+  .toc nav{ margin-top:18px; }
+  .toc .grp{ margin-bottom:4px; }
+  .toc .grp-label{ font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700; padding:10px 8px 4px; }
+  .toc a{ display:block; padding:5px 8px; border-radius:6px; color:var(--ink); text-decoration:none; font-size:.86rem; }
+  .toc a:hover{ background:var(--surface-2); }
+  .toc a.cur{ background:var(--accent-soft); color:var(--accent-ink); font-weight:600; }
+
+  /* ---------- Main ---------- */
+  main{ flex:1; min-width:0; }
+  .wrap{ max-width:860px; margin:0 auto; padding:48px 40px 120px; }
+  @media (max-width:900px){ .toc{ display:none; } .wrap{ padding:32px 20px 90px; } }
+
+  .cover{ margin-bottom:56px; }
+  .cover .eyebrow{ font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); font-weight:700; }
+  .cover h1{ font-size:2.15rem; margin:.35em 0 .2em; line-height:1.15; }
+  .cover .sub{ color:var(--muted); font-size:1.05rem; max-width:60ch; }
+  .cover .meta{ display:flex; gap:22px; flex-wrap:wrap; margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+  .cover .meta div{ font-size:.82rem; }
+  .cover .meta b{ display:block; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:700; margin-bottom:2px; }
+
+  section.mod{ margin:0 0 12px; padding-top:52px; border-top:1px solid var(--line); }
+  section.mod:first-of-type{ border-top:none; }
+  .mod-head{ display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .mod-head h2{ font-size:1.5rem; margin:0; }
+  .mod-tag{ font-size:.72rem; font-family:var(--mono); color:var(--muted); background:var(--surface-2); border:1px solid var(--line); padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .mod-intro{ color:var(--muted); margin:.5em 0 1.4em; max-width:66ch; }
+
+  h3.step{ font-size:1.06rem; margin:2em 0 .6em; display:flex; align-items:center; gap:10px; }
+  h3.step .doc-no{ font-family:var(--mono); font-size:.78rem; color:var(--surface); background:var(--accent); padding:2px 9px; border-radius:5px; font-weight:600; }
+
+  table{ width:100%; border-collapse:collapse; font-size:.87rem; }
+  .tbl-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; margin:.7em 0 1.3em; box-shadow:var(--shadow); background:var(--surface); }
+  .tbl-wrap table{ margin:0; }
+  th,td{ text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th{ background:var(--surface-2); font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:700; }
+  tr:last-child td{ border-bottom:none; }
+  td.num, th.num{ text-align:right; }
+  td.wrap, th.wrap{ white-space:normal; }
+  tr.total td{ font-weight:700; background:var(--surface-2); }
+  tr.sub td{ color:var(--muted); font-style:italic; }
+
+  .callout{ border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:14px 16px; margin:1em 0; background:var(--surface); }
+  .callout > .lbl{ font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; font-weight:800; margin-bottom:5px; display:flex; align-items:center; gap:6px; }
+  .callout p{ margin:.3em 0; }
+  .callout p:first-of-type{ margin-top:0; }
+  .callout p:last-child{ margin-bottom:0; }
+  .callout.expect{ border-left-color:var(--accent); }
+  .callout.expect > .lbl{ color:var(--accent-ink); }
+  .callout.calc{ border-left-color:var(--info); background:var(--info-soft); }
+  .callout.calc > .lbl{ color:var(--info); }
+  .callout.watch{ border-left-color:var(--amber); background:var(--amber-soft); }
+  .callout.watch > .lbl{ color:var(--amber); }
+  .callout.bug{ border-left-color:var(--danger); background:var(--danger-soft); }
+  .callout.bug > .lbl{ color:var(--danger); }
+  .callout.fixed{ border-left-color:var(--fixed); background:var(--fixed-soft); }
+  .callout.fixed > .lbl{ color:var(--fixed); }
+
+  .chip{ display:inline-flex; align-items:center; gap:4px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:20px; border:1px solid; vertical-align:middle; }
+  .chip.bug{ color:var(--danger); border-color:var(--danger-line); background:var(--danger-soft); }
+  .chip.fixed{ color:var(--fixed); border-color:var(--fixed-line); background:var(--fixed-soft); }
+  .chip.watch{ color:var(--amber); border-color:var(--amber-line); background:var(--amber-soft); }
+  .chip.info{ color:var(--info); border-color:var(--info-line); background:var(--info-soft); }
+
+  .formula{ font-family:var(--mono); font-size:.84rem; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto; white-space:pre; margin:.6em 0; }
+
+  .issues{ counter-reset:issue; }
+  .issue{ counter-increment:issue; display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .issue:last-child{ border-bottom:none; }
+  .issue .n{ font-family:var(--mono); font-size:.78rem; color:var(--muted); flex-shrink:0; width:22px; padding-top:2px; }
+  .issue .body p{ margin:0 0 4px; }
+  .issue .body .where{ font-family:var(--mono); font-size:.78rem; color:var(--muted); }
+
+  .backtotop{ text-align:center; margin-top:2.2em; }
+  .backtotop a{ font-size:.78rem; color:var(--muted); text-decoration:none; }
+  .backtotop a:hover{ color:var(--accent-ink); }
+
+  hr.rule{ border:none; border-top:1px solid var(--line); margin:2.4em 0; }
+  ul.plain{ padding-left:1.2em; }
+  ul.plain li{ margin:.3em 0; }
+  .small{ font-size:.82rem; color:var(--muted); }
+  .kbd{ font-family:var(--mono); background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:.82em; }
+</style>
+
+<div class="shell">
+
+  <aside class="toc">
+    <div class="brand">Evotrade Test Plan<small>Al-Noor Electronics &amp; Trading Co.</small></div>
+    <nav>
+      <div class="grp">
+        <div class="grp-label">Start here</div>
+        <a href="#cover">Cover &amp; how to use this</a>
+        <a href="#company">The business</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">1 · Setup &amp; Masters</div>
+        <a href="#setup">Company setup</a>
+        <a href="#coa">Chart of accounts &amp; taxes</a>
+        <a href="#warehouses">Warehouses</a>
+        <a href="#customers">Customers</a>
+        <a href="#vendors">Vendors</a>
+        <a href="#products">Products</a>
+        <a href="#salespersons">Sales persons &amp; couriers</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">2 · CRM</div>
+        <a href="#crm">Leads, prospects, tickets, events, calls</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">3 · Sales cycle</div>
+        <a href="#sq">Sales quotation</a>
+        <a href="#so">Sales order</a>
+        <a href="#si">Sales invoice</a>
+        <a href="#sd">Sales delivery</a>
+        <a href="#rm">Receive payment</a>
+        <a href="#sr">Sales return</a>
+        <a href="#srf">Sales refund</a>
+        <a href="#ss">Sales settlement</a>
+        <a href="#cn">Credit note</a>
+        <a href="#ri">Recurring invoice</a>
+        <a href="#si-final">Invoice: final state</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">4 · Purchase cycle</div>
+        <a href="#pq">Purchase quotation</a>
+        <a href="#po">Purchase order</a>
+        <a href="#grn">Purchase receipt</a>
+        <a href="#pi">Purchase invoice</a>
+        <a href="#mp">Make payment</a>
+        <a href="#ps">Purchase settlement</a>
+        <a href="#pr">Purchase return</a>
+        <a href="#prf">Purchase refund</a>
+        <a href="#dn">Debit note</a>
+        <a href="#ii">Import invoice</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">5 · Inventory &amp; manufacturing</div>
+        <a href="#sa">Stock adjustment</a>
+        <a href="#sm">Stock movement</a>
+        <a href="#saud">Stock audit</a>
+        <a href="#sval">Scheduled valuation</a>
+        <a href="#bom">Bill of materials</a>
+        <a href="#wo">Work order</a>
+        <a href="#dis">Disassembly order</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">6 · Accounts</div>
+        <a href="#banks">Bank accounts</a>
+        <a href="#ft">Fund transfer</a>
+        <a href="#bd">Bank deposit</a>
+        <a href="#exp">Expenses</a>
+        <a href="#oc">Other collections/payments</a>
+        <a href="#ocs">Other contact settlement</a>
+        <a href="#je">Journal entry</a>
+        <a href="#reports">Reports cross-check</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">7 · POS</div>
+        <a href="#pos">Counters, session, checkout</a>
+        <a href="#barcode">Barcode templates</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">8 · HR &amp; Payroll</div>
+        <a href="#hr">Employees, departments, projects</a>
+      </div>
+      <div class="grp">
+        <div class="grp-label">Appendix</div>
+        <a href="#issues">Known issues (25)</a>
+        <a href="#validation">Validation changes made</a>
+      </div>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="wrap">
+
+      <div class="cover" id="cover">
+        <div class="eyebrow">End-to-end test plan · Evotrade Accounting Software</div>
+        <h1>One business, entered start to finish, with the numbers worked out in advance.</h1>
+        <p class="sub">This is a single continuous story: a real business, opened fresh, trading for its first month. Every module gets exercised in the order a business would actually hit it, with the exact figures to type in and the exact result the system should show back. Where the code does something a normal person wouldn't expect, that's called out before you get there — so a surprising number means "known behaviour," and a wrong number means "actual bug."</p>
+        <div class="meta">
+          <div><b>Business</b>Al-Noor Electronics &amp; Trading Co.</div>
+          <div><b>Currency</b>PKR</div>
+          <div><b>Modules covered</b>38</div>
+          <div><b>Documented entries</b>90+</div>
+          <div><b>Known issues logged</b>25 (3 fixed this session)</div>
+        </div>
+      </div>
+
+      <div class="callout expect" id="howto">
+        <div class="lbl">How to use this</div>
+        <p>Work through the sections in order — later modules assume earlier ones already exist (the Sales Invoice needs the Customer and Product to already be saved, the Receive Payment needs the Invoice, and so on). Each step gives you a table of exactly what to type, then one of four callout types:</p>
+        <p><span class="chip info">Calc</span> — the arithmetic the system should run, shown so you can check it by hand.
+        &nbsp;<span class="chip watch">Watch</span> — non-obvious real behaviour: not a bug, just easy to misread as one.
+        &nbsp;<span class="chip bug">Bug</span> — a genuine defect found while researching this plan; the expected result documents what it <em>actually</em> does today.
+        &nbsp;<span class="chip fixed">Fixed</span> — a defect that was fixed as part of this same work session; flagged so you can confirm the fix actually took.</p>
+        <p>All figures are in PKR. Dates below say "today" / "today+N days" — substitute the actual date you run the test on.</p>
+      </div>
+
+      <section class="mod" id="company">
+        <div class="mod-head"><h2>The business</h2></div>
+        <p class="mod-intro">Al-Noor Electronics &amp; Trading Co. is a Lahore-based wholesale-and-retail electrical goods trader: light fittings, fans, cabling, and small appliances, sourced partly from a local distributor and partly imported. It runs one warehouse and one shop counter, sells to walk-in retail customers as well as a handful of wholesale and institutional accounts, and is registered for sales tax.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Legal / print name</td><td>Al-Noor Electronics &amp; Trading Co.</td></tr>
+          <tr><td>Business type</td><td>Retail</td></tr>
+          <tr><td>Address</td><td>45-B Ferozepur Road, Lahore, Punjab, 54000, Pakistan</td></tr>
+          <tr><td>Phone</td><td>042-35678901</td></tr>
+          <tr><td>Email</td><td>info@alnoorelectronics.pk</td></tr>
+          <tr><td>NTN</td><td>3456789-0</td></tr>
+          <tr><td>CNIC (proprietor Ahmed Raza)</td><td>35202-1234567-1</td></tr>
+        </table></div>
+      </section>
+
+      <!-- ================= SETUP ================= -->
+
+      <section class="mod" id="setup">
+        <div class="mod-head"><h2>Setup — Company information</h2><span class="mod-tag">/setup → Information</span></div>
+        <p class="mod-intro">Enter the business details above into Setup → Information and save.</p>
+        <div class="callout expect"><div class="lbl">Expected</div>
+        <p>Saves without error. Company Name is now required and must contain a letter (this session's fix) — try saving with the name field blank or as just <code>12345</code> first and confirm it's rejected with a clear message, then fill it in correctly.</p></div>
+        <div class="callout watch"><div class="lbl">Watch</div>
+        <p>Only Company Name / Address / City / Country / Phone / NTN actually appear anywhere later (on printed invoice headers). A "Currency Display" control and Fiscal Year concepts elsewhere in Settings are decorative — they don't change any calculation in this build. The logo and per-document print-template toggles you can set in Settings are stored in <em>this browser's</em> local storage, not on the server — they won't show up on another device or for another user.</p></div>
+      </section>
+
+      <section class="mod" id="coa">
+        <div class="mod-head"><h2>Chart of accounts &amp; taxes</h2><span class="mod-tag">/chart-of-accounts · /setup → Taxes</span></div>
+        <p class="mod-intro">Nothing to create here — Evotrade seeds a full chart of accounts and a standard set of Pakistani sales-tax rates automatically. Just confirm they're there before moving on.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Check</th><th>Expected</th></tr>
+          <tr><td>Chart of Accounts list, "Show Inactive" <b>off</b></td><td>A full tree under Assets / Liabilities / Equity / Revenue / Expenses, including an <b>Accounts Receivable</b> and <b>Accounts Payable</b> leaf account.</td></tr>
+          <tr><td>Taxes list</td><td><code>No Tax</code> 0%, <code>GST 5/10/15/17%</code>, <code>Sales Tax 3%</code> (sales only), <code>Withholding Tax 4.5%</code> (purchases only).</td></tr>
+        </table></div>
+        <div class="callout fixed"><div class="lbl">Fixed this session</div>
+        <p>Every module below that posts automatically to Accounts Receivable / Accounts Payable / Undeposited Funds (Sales Invoices, Receive Payments, Purchase Invoices, Returns, Refunds, Settlements, Credit/Debit Notes, Bank Deposits) used to write to an old, hidden, deactivated copy of these accounts because of a naming mismatch — so postings were invisible unless you ticked "Show Inactive." That's fixed: the postings now land on the visible accounts you see by default. If you see AR/AP balances <em>not</em> moving anywhere at all after invoices/payments below, that would mean this fix didn't take — check "Show Inactive" as a fallback before assuming the module itself is broken.</p></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>Reports → Profit &amp; Loss will always show <b>Cost of Goods Sold = 0</b>. No account in the seeded chart is tagged with the specific type the P&amp;L report looks for; COGS-like accounts are tagged as plain "expense" instead, so they land in the generic Expenses bucket. This is a report-side gap, not something your data entry can fix.</p></div>
+        <p>All electronics goods below use GST 17% for both sales and purchases unless noted.</p>
+      </section>
+
+      <section class="mod" id="warehouses">
+        <div class="mod-head"><h2>Warehouses</h2><span class="mod-tag">/warehouses</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>#</th><th>Name</th><th class="wrap">Address</th></tr>
+          <tr><td>1</td><td>Main Warehouse</td><td class="wrap">45-B Ferozepur Road, Lahore</td></tr>
+          <tr><td>2</td><td>Shop Floor — Liberty Market</td><td class="wrap">Liberty Market, Gulberg III, Lahore</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Two warehouse codes auto-generate (e.g. from the name). Try saving a warehouse named just <code>#1</code> as a throwaway test first — it should now be rejected (name must contain a letter), then delete that test row and enter the two real ones above.</p></div>
+      </section>
+
+      <section class="mod" id="customers">
+        <div class="mod-head"><h2>Customers</h2><span class="mod-tag">/customers</span></div>
+        <p class="mod-intro">Eight customers spanning every category, so later reports (AR aging, customer balance) have real variety.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>#</th><th class="wrap">Name</th><th>Category</th><th class="wrap">City</th><th>Phone</th><th>Opening balance</th></tr>
+          <tr><td>1</td><td>Crescent Wholesale Traders</td><td>Wholesale</td><td>Lahore</td><td>0300-1112233</td><td class="num">0</td></tr>
+          <tr><td>2</td><td>Bilal Mobile &amp; Electronics</td><td>Retail</td><td>Lahore</td><td>0321-2223344</td><td class="num">0</td></tr>
+          <tr><td>3</td><td>Govt. College Lahore — Procurement Office</td><td>Government</td><td>Lahore</td><td>042-99887766</td><td class="num">0</td></tr>
+          <tr><td>4</td><td>Orbit Corporate Solutions (Pvt) Ltd</td><td>Corporate</td><td>Karachi</td><td>021-34556677</td><td class="num">0</td></tr>
+          <tr><td>5</td><td>Rehman Fabrics &amp; Sons</td><td>Wholesale</td><td>Faisalabad</td><td>041-8765432</td><td class="num">0</td></tr>
+          <tr><td>6</td><td>Walk-in Customer</td><td>Walk-in</td><td>Lahore</td><td>—</td><td class="num">0</td></tr>
+          <tr><td>7</td><td>Al-Hira Public School System</td><td>Government</td><td>Lahore</td><td>042-35566778</td><td class="num">0</td></tr>
+          <tr><td>8</td><td>Javed Home Appliances</td><td>Retail</td><td>Gujranwala</td><td>055-3344556</td><td class="num">0</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div>
+        <p>Codes auto-number <code>C-000001</code> … <code>C-000008</code> in save order. Every row's Name column shows the actual text you typed — this is the exact bug you originally reported (a numbers-only or blank name being silently accepted); it's now rejected with "Customer name is required" / "must contain at least one letter" before save. Try it once on a throwaway 9th row (name = <code>12345</code>) to confirm, then delete that row.</p></div>
+        <div class="callout fixed"><div class="lbl">Fixed this session</div>
+        <p>Uploading a profile photo on any of these customers now actually saves and reappears after you close and reopen the record (previously the image preview vanished on save — it was never sent to the server at all). Longitude/Latitude are now saved too, for the same reason.</p></div>
+      </section>
+
+      <section class="mod" id="vendors">
+        <div class="mod-head"><h2>Vendors</h2><span class="mod-tag">/vendors</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>#</th><th class="wrap">Name</th><th class="wrap">City</th><th class="wrap">Role</th></tr>
+          <tr><td>1</td><td>Continental Import House</td><td>Karachi</td><td>Importer — electronics from China</td></tr>
+          <tr><td>2</td><td>Lahore Electronics Distributors</td><td>Lahore</td><td>Local distributor</td></tr>
+          <tr><td>3</td><td>Siddiqui Cable &amp; Wire Works</td><td>Sialkot</td><td>Manufacturer — cabling</td></tr>
+          <tr><td>4</td><td>Al-Rahim Packaging Supplies</td><td>Lahore</td><td>Local supplier — packaging</td></tr>
+          <tr><td>5</td><td>Prime Components Ltd</td><td>Lahore</td><td>Distributor — small components</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Codes auto-number <code>V-000001</code> … <code>V-000005</code>. Same name validation as Customers now applies here.</p></div>
+      </section>
+
+      <section class="mod" id="products">
+        <div class="mod-head"><h2>Products</h2><span class="mod-tag">/products</span></div>
+        <p class="mod-intro">Ten sale items plus four raw-material / finished-good items reserved for the Manufacturing section later. All use Unit = PCS, Tax = GST 17% (sales &amp; purchase) unless noted.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>#</th><th class="wrap">Name</th><th>Purchase price</th><th>Sale price</th><th class="wrap">Notes</th></tr>
+          <tr><td>1</td><td>LED Bulb 12W</td><td class="num">180</td><td class="num">280</td><td></td></tr>
+          <tr><td>2</td><td>Ceiling Fan 56"</td><td class="num">3,200</td><td class="num">4,500</td><td></td></tr>
+          <tr><td>3</td><td>Extension Cord 5-Socket</td><td class="num">350</td><td class="num">550</td><td></td></tr>
+          <tr><td>4</td><td>USB-C Charger 20W</td><td class="num">650</td><td class="num">950</td><td></td></tr>
+          <tr><td>5</td><td>LED Panel Light 18W</td><td class="num">420</td><td class="num">650</td><td></td></tr>
+          <tr><td>6</td><td>Electric Kettle 1.7L</td><td class="num">1,450</td><td class="num">2,100</td><td></td></tr>
+          <tr><td>7</td><td>Wire Roll 90m 7/29</td><td class="num">2,800</td><td class="num">3,600</td><td>Unit = Roll</td></tr>
+          <tr><td>8</td><td>MCB Switch 32A</td><td class="num">220</td><td class="num">380</td><td></td></tr>
+          <tr><td>9</td><td>Rechargeable Torch</td><td class="num">480</td><td class="num">750</td><td></td></tr>
+          <tr><td>10</td><td>Voltage Stabilizer 1KVA</td><td class="num">4,200</td><td class="num">5,800</td><td></td></tr>
+          <tr class="sub"><td>11</td><td>Battery Pack 6V 4Ah</td><td class="num">850</td><td class="num">—</td><td>raw material, purchase-only</td></tr>
+          <tr class="sub"><td>12</td><td>LED Circuit Board</td><td class="num">320</td><td class="num">—</td><td>raw material, purchase-only</td></tr>
+          <tr class="sub"><td>13</td><td>Plastic Casing (Emergency Light)</td><td class="num">180</td><td class="num">—</td><td>raw material, purchase-only</td></tr>
+          <tr class="sub"><td>14</td><td>Emergency Light Kit (Assembled)</td><td class="num">—</td><td class="num">2,400</td><td>finished good, sale-only — built via BOM</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Codes auto-number <code>P-000001</code> … <code>P-000014</code>. Product name is now validated the same way (must contain a letter); purchase/sale price and MRP now reject negative numbers.</p></div>
+      </section>
+
+      <section class="mod" id="salespersons">
+        <div class="mod-head"><h2>Sales persons &amp; couriers</h2><span class="mod-tag">/sales-persons · /couriers</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Sales person</th><th>Type</th><th class="wrap">Flags</th></tr>
+          <tr><td>Ahmed Raza</td><td>Manager</td><td class="wrap">Is Manager = Yes</td></tr>
+          <tr><td>Bilal Aslam</td><td>Salesman</td><td class="wrap">Can Add Discount = No</td></tr>
+          <tr><td>Nida Yousaf</td><td>Salesman</td><td class="wrap">Can Add Discount = Yes</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Courier</th><th class="wrap">Notes</th></tr>
+          <tr><td>TCS Express</td><td class="wrap">tracking_url field can be left blank</td></tr>
+          <tr><td>Leopards Courier</td><td class="wrap"></td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch</div>
+        <p>Sales Person has no commission-percentage field, and no sales document actually links a specific invoice to a specific sales person (there's no such column in the database). The "Sales Target &amp; Commission" report under Reports will show every sales person credited with the <em>entire company's</em> sales × a flat 5% — the same number repeated for all three of them. That's a report bug, not a sign you set something up wrong.</p></div>
+      </section>
+
+      <!-- ================= CRM ================= -->
+
+      <section class="mod" id="crm">
+        <div class="mod-head"><h2>CRM — leads, prospects, tickets, events, calls</h2><span class="mod-tag">/crm · /prospects · /crm/tickets · /crm/events · /crm/calls</span></div>
+        <p class="mod-intro">One entry in each CRM list, run before the sales cycle starts (this is meant to represent the pipeline that led to the first orders below).</p>
+
+        <h3 class="step"><span class="doc-no">Lead</span> Orbit — server room lighting upgrade</h3>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Name</td><td>Orbit Corporate Solutions — Server Room Lighting Upgrade</td></tr>
+          <tr><td>Source</td><td>Referral</td></tr>
+          <tr><td>Stage</td><td>Qualified</td></tr>
+          <tr><td>Expected revenue</td><td class="num">350,000</td></tr>
+          <tr><td>Probability %</td><td class="num">60</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Number auto-assigns as <code>L-000001</code>. There's no "Convert to Customer" button anywhere for a Lead — that feature doesn't exist in this build, so don't look for it; Orbit is entered as a Customer separately in the Customers step above.</p></div>
+
+        <h3 class="step"><span class="doc-no">Prospect</span> Green Valley Textile Mills</h3>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Print name</td><td>Green Valley Textile Mills</td></tr>
+          <tr><td>City</td><td>Faisalabad</td></tr>
+          <tr><td>Status</td><td>Active</td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch</div><p>Number auto-assigns as <code>PROS-000001</code>. There <em>is</em> a working "convert prospect to customer" endpoint in the backend, but no button anywhere in the UI calls it — so this prospect will just sit as a prospect indefinitely through the app; that's expected, not a bug you need to chase.</p></div>
+
+        <h3 class="step"><span class="doc-no">Ticket</span> Wrong item delivered</h3>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Title</td><td>Wrong item delivered — Extension Cord</td></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Priority</td><td>High</td></tr>
+          <tr><td>Status</td><td>Open</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Saves as <code>T-00001</code>. Title is now required and must contain a letter.</p></div>
+
+        <h3 class="step"><span class="doc-no">Event</span> Product demo</h3>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Subject</td><td>Product Demo — Voltage Stabilizer</td></tr>
+          <tr><td>Customer</td><td>Al-Hira Public School System</td></tr>
+          <tr><td>Start</td><td>today 11:00</td></tr>
+          <tr><td>End</td><td>today 12:00</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc — try this first</div><p>Enter End = today 10:00 (before Start) and save. This is the one CRM module with a real server-side rule: it must reject with a 400 error because end date is before start date. Then correct End to 12:00 and save again — should now succeed as <code>EV-000001</code>.</p></div>
+
+        <h3 class="step"><span class="doc-no">Call</span> Follow-up on quotation</h3>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Subject</td><td>Follow-up on quotation SQ-000001</td></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Call type</td><td>Outbound</td></tr>
+          <tr><td>Duration (minutes)</td><td class="num">8</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Saves as <code>CL-00001</code>. Subject is now required; duration must be zero or positive.</p></div>
+      </section>
+
+      <!-- ================= SALES CYCLE ================= -->
+
+      <section class="mod" id="sq">
+        <div class="mod-head"><h2>Sales cycle — Sales Quotation</h2><span class="mod-tag">/sales-quotations</span></div>
+        <p class="mod-intro">Crescent Wholesale Traders asks for a price on three items.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Date</td><td>today</td></tr>
+          <tr><td>Expiry date</td><td>today + 15 days</td></tr>
+          <tr><td>Header discount</td><td class="num">2%</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Line</th><th class="wrap">Product</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Disc %</th><th>Tax</th></tr>
+          <tr><td>1</td><td>LED Bulb 12W</td><td class="num">100</td><td class="num">280</td><td class="num">5</td><td>GST 17%</td></tr>
+          <tr><td>2</td><td>Ceiling Fan 56"</td><td class="num">20</td><td class="num">4,500</td><td class="num">0</td><td>GST 17%</td></tr>
+          <tr><td>3</td><td>Extension Cord 5-Socket</td><td class="num">50</td><td class="num">550</td><td class="num">0</td><td>GST 17%</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">Line 1: 100 × 280 × (1 − 0.05) =  26,600.00   tax 17% =  4,522.00
+Line 2:  20 × 4,500          =  90,000.00   tax 17% = 15,300.00
+Line 3:  50 × 550            =  27,500.00   tax 17% =  4,675.00
+                                ───────────            ─────────
+Gross                          144,100.00   Tax     = 24,497.00
+
+Header discount = 144,100.00 × 2% = 2,882.00
+Net total = 144,100.00 − 2,882.00 + 24,497.00 = 165,715.00</div>
+        <p>Expect the saved Net Total to read exactly <b>165,715.00</b>. Note the header discount is taken off the goods value only — it does <em>not</em> reduce the 24,497.00 of tax, because tax is fixed per line before the header discount is even known. This is real, consistent behaviour across every quotation/order/invoice in this system, sales and purchase side alike — not a rounding quirk.</p></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Number auto-assigns <code>SQ-000001</code>. Customer, Date and Expiry Date are now enforced as required (previously the asterisk was cosmetic); Expiry Date must be on/after the quotation Date.</p></div>
+      </section>
+
+      <section class="mod" id="so">
+        <div class="mod-head"><h2>Sales Order — converted from the quotation</h2><span class="mod-tag">/sales-orders</span></div>
+        <div class="callout watch"><div class="lbl">Watch — do this test deliberately</div>
+        <p>Click "Convert to Order" from SQ-000001 and save <b>without touching anything</b>. Converting copies the customer and the three lines, but <em>not</em> the 2% header discount or shipping — they silently reset to 0. Expected Net Total on this first, untouched save:</p>
+        <div class="formula">Net total (no discount carried over) = 144,100.00 + 24,497.00 = 168,597.00</div>
+        <p>That's <b>168,597.00</b>, not 165,715.00 — a genuinely higher number than the quotation, purely because the discount didn't survive the conversion. This is expected current behaviour, confirmed in the code, not a calculation error.</p></div>
+        <div class="callout expect"><div class="lbl">Then</div><p>Edit the order, re-enter Header discount = 2% (and Delivery Date = today + 5 days, now enforced as required and must be on/after the order date), save again. Net Total should now match the quotation: <b>165,715.00</b>. Number auto-assigns <code>SO-000001</code>; the source quotation SQ-000001 should flip to status <b>converted</b>.</p></div>
+      </section>
+
+      <section class="mod" id="si">
+        <div class="mod-head"><h2>Sales Invoice — converted from the order</h2><span class="mod-tag">/sales-invoices</span></div>
+        <p class="mod-intro">Convert SO-000001 to an invoice. Same reset-to-zero behaviour applies — re-enter Header discount = 2% before saving. Leave Due Date = today + 15 days (now enforced as required, must be on/after invoice date).</p>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Same three lines, same 2% header discount → Net Total = <b>165,715.00</b> again. Number auto-assigns <code>SI-000001</code>; the linked Sales Order flips to status <b>invoiced</b> once you <em>approve</em> this invoice (not merely on save).</p></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>If this form has a "Round Off" box, anything you type into it is shown in the on-screen total but silently dropped — it's never sent to the server and there's no column for it. Expect the <em>saved</em> Net Total to be exactly 165,715.00 even if you entered a non-zero round-off on screen. Leave it at 0 to avoid confusing yourself.</p></div>
+        <div class="callout expect"><div class="lbl">Expected — approve it now</div><p>Click Approve. Chart of Accounts: <b>Accounts Receivable</b> increases by 165,715.00, a Sales/Revenue account increases by the same. (Reports → Trial Balance/P&amp;L/Balance Sheet will show none of this — see the Reports section below for why.)</p></div>
+      </section>
+
+      <section class="mod" id="sd">
+        <div class="mod-head"><h2>Sales Delivery</h2><span class="mod-tag">/sales-deliveries</span></div>
+        <p class="mod-intro">Goods physically leave Main Warehouse for Crescent Wholesale Traders, referencing SO-000001.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Warehouse</td><td>Main Warehouse</td></tr>
+          <tr><td>Order</td><td>SO-000001</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Product</th><th class="num">Delivered qty</th></tr>
+          <tr><td>LED Bulb 12W</td><td class="num">100</td></tr>
+          <tr><td>Ceiling Fan 56"</td><td class="num">20</td></tr>
+          <tr><td>Extension Cord 5-Socket</td><td class="num">50</td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch — this is the one place stock actually moves</div>
+        <p>Across the whole Sales cycle, <b>only confirming this Delivery decrements stock</b> — the Sales Order and Sales Invoice never touch inventory at all. Confirm it, then check Products or a stock report: Main Warehouse quantity-on-hand for these three items should each drop by exactly the delivered qty above. Number auto-assigns <code>SD-000001</code>; Customer and Warehouse are now required.</p></div>
+      </section>
+
+      <section class="mod" id="rm">
+        <div class="mod-head"><h2>Receive Payment</h2><span class="mod-tag">/receive-payments</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Bank account</td><td>Meezan Bank — Current Account <span class="small">(create this first — see Accounts § below)</span></td></tr>
+          <tr><td>Amount</td><td class="num">100,000</td></tr>
+          <tr><td>Allocate to</td><td>SI-000001, amount 100,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">SI-000001 balance:  165,715.00 − 100,000.00 = 65,715.00 → status: partially_paid</div>
+        <p>Approve it: Meezan Bank increases by 100,000.00, Accounts Receivable decreases by 100,000.00. Number auto-assigns <code>RM-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="sr">
+        <div class="mod-head"><h2>Sales Return</h2><span class="mod-tag">/sales-returns</span></div>
+        <p class="mod-intro">Crescent returns 10 Extension Cords, linked to SI-000001.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Product</th><th class="num">Qty</th><th class="num">Unit price</th><th>Tax</th></tr>
+          <tr><td>Extension Cord 5-Socket</td><td class="num">10</td><td class="num">550</td><td>GST 17%</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">Line: 10 × 550 = 5,500.00     Tax 17% = 935.00     Net = 6,435.00
+SI-000001 balance: 65,715.00 − 6,435.00 = 59,280.00 → still partially_paid</div></div>
+        <div class="callout watch"><div class="lbl">Watch</div><p>Approving this return does <b>not</b> put the 10 units back into Main Warehouse stock, even though there's a "disposition = restock" option on the line. Stock is unaffected by Sales Returns in this build — confirm quantity-on-hand for Extension Cord did not change. Number auto-assigns <code>SR-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="srf">
+        <div class="mod-head"><h2>Sales Refund</h2><span class="mod-tag">/sales-refunds</span></div>
+        <p class="mod-intro">Crescent wants part of that return paid back in cash rather than left as credit. Link to SR-000001.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Linked return</td><td>SR-000001</td></tr>
+          <tr><td>Instrument</td><td>Cash, amount 3,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">Return SR-000001 unadjusted amount: 6,435.00 − 3,000.00 = 3,435.00 → status: partially_adjusted</div></div>
+        <div class="callout watch"><div class="lbl">Watch</div><p>This refund does <b>not</b> change SI-000001's balance at all — it only adjusts the Return's own "unadjusted amount." The invoice balance stays at 59,280.00 after this step. Number auto-assigns <code>CR-000001</code> (yes, refunds use the <code>CR-</code> prefix, not <code>RF-</code>).</p></div>
+      </section>
+
+      <section class="mod" id="ss">
+        <div class="mod-head"><h2>Sales Settlement</h2><span class="mod-tag">/sales-settlements</span></div>
+        <p class="mod-intro">Write off part of the remaining invoice balance against a Discount Allowed account, without a cash receipt.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Account</td><td>Discount Allowed (or nearest expense account)</td></tr>
+          <tr><td>Line</td><td>SI-000001, amount 20,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">SI-000001 balance: 59,280.00 − 20,000.00 = 39,280.00 → still partially_paid
+SI-000001 paid_amount so far: 100,000.00 (RM) + 20,000.00 (settlement) = 120,000.00</div>
+        <p>Number auto-assigns <code>CS-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="cn">
+        <div class="mod-head"><h2>Credit Note</h2><span class="mod-tag">/credit-notes</span></div>
+        <p class="mod-intro">A 5,000 goodwill credit, allocated directly against SI-000001.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Contact name</td><td>Crescent Wholesale Traders <span class="small">(free-text field, not a customer picker)</span></td></tr>
+          <tr><td>Account</td><td>Discount Allowed</td></tr>
+          <tr><td>Amount</td><td class="num">5,000</td></tr>
+          <tr><td>Allocation</td><td>SI-000001, amount 5,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">SI-000001 balance: 39,280.00 − 5,000.00 = 34,280.00
+SI-000001 paid_amount: 120,000.00 + 5,000.00 = 125,000.00</div>
+        <p>Number auto-assigns <code>CN-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="si-final">
+        <div class="mod-head"><h2>SI-000001 — final expected state</h2></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th class="num">Value</th></tr>
+          <tr><td>Net amount</td><td class="num">165,715.00</td></tr>
+          <tr><td>Paid amount</td><td class="num">125,000.00</td></tr>
+          <tr><td>Balance amount</td><td class="num">34,280.00</td></tr>
+          <tr class="total"><td>Status</td><td class="num">partially_paid</td></tr>
+        </table></div>
+        <p class="small">This single invoice has now been touched by five different modules (Receive Payment, Return, Refund, Settlement, Credit Note) — if your numbers match the table above, all five are doing their arithmetic correctly and none is silently double-counting or skipping the invoice.</p>
+      </section>
+
+      <section class="mod" id="ri">
+        <div class="mod-head"><h2>Recurring Invoice</h2><span class="mod-tag">/recurring-invoices</span></div>
+        <p class="mod-intro">A standing monthly invoice profile for Crescent Wholesale Traders.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Customer</td><td>Crescent Wholesale Traders</td></tr>
+          <tr><td>Frequency</td><td>Monthly, every 1 month</td></tr>
+          <tr><td>Start date</td><td>today</td></tr>
+          <tr><td>Due days</td><td class="num">15</td></tr>
+          <tr><td>Line</td><td>MCB Switch 32A, qty 5, unit price 380, GST 17%</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">5 × 380 = 1,900.00     Tax 17% = 323.00     Net = 2,223.00</div></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Number auto-assigns <code>RI-000001</code> for the profile itself. Run "Execute" (or wait for the hourly auto-run) — a real <b>draft</b> Sales Invoice is created, numbered from the ordinary <code>SI-</code> series (so it'll be <code>SI-000002</code>, not an <code>RI-</code> number), with Net Total 2,223.00. It stays in draft until you approve it separately like any other invoice.</p></div>
+      </section>
+
+      <!-- ================= PURCHASE CYCLE ================= -->
+
+      <section class="mod" id="pq">
+        <div class="mod-head"><h2>Purchase cycle — Purchase Quotation</h2><span class="mod-tag">/purchase-quotations</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Vendor</td><td>Continental Import House</td></tr>
+          <tr><td>Line</td><td>Voltage Stabilizer 1KVA, qty 30, unit cost 4,200, GST 17%</td></tr>
+          <tr><td>Header discount</td><td class="num">3,000 (flat amount, not %)</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">30 × 4,200 = 126,000.00     Tax 17% = 21,420.00
+Net = 126,000.00 − 3,000.00 + 21,420.00 = 144,420.00</div>
+        <p>Number auto-assigns <code>RFQ-000001</code>. Note this form's header discount is a flat amount you type directly — every other purchase-side form (Order, Invoice, Return) instead takes a <em>percentage</em> that it converts to an amount for you. Don't be surprised the box works differently here.</p></div>
+      </section>
+
+      <section class="mod" id="po">
+        <div class="mod-head"><h2>Purchase Order</h2><span class="mod-tag">/purchase-orders</span></div>
+        <p class="mod-intro">Create fresh (there's no "convert from quotation" button on this screen — linking a quotation is for reference only, nothing auto-copies).</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Vendor</td><td>Continental Import House</td></tr>
+          <tr><td>Line</td><td>Voltage Stabilizer 1KVA, qty 30, unit cost 4,200, GST 17%</td></tr>
+          <tr><td>Header discount</td><td class="num">2%</td></tr>
+          <tr><td>Receipt date</td><td>today + 7 days</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">Gross = 126,000.00   Tax = 21,420.00
+Discount = 126,000.00 × 2% = 2,520.00
+Net = 126,000.00 − 2,520.00 + 21,420.00 = 144,900.00</div>
+        <p>Number auto-assigns <code>PO-000001</code>. Vendor, Date and Receipt Date are now required.</p></div>
+      </section>
+
+      <section class="mod" id="grn">
+        <div class="mod-head"><h2>Purchase Receipt (GRN)</h2><span class="mod-tag">/purchase-receipts</span></div>
+        <p class="mod-intro">Goods physically arrive at Main Warehouse, linked to PO-000001.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Product</th><th class="num">Received qty</th><th class="num">Unit cost</th></tr>
+          <tr><td>Voltage Stabilizer 1KVA</td><td class="num">30</td><td class="num">4,200</td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch</div>
+        <p>Confirming this GRN is the <b>only</b> thing in the purchase cycle that touches stock — Purchase Invoice never does. Confirm it: Main Warehouse quantity-on-hand for Voltage Stabilizer goes <b>up</b> by 30. It should also push PO-000001's status to "received." Unit cost here is recorded on this document only — it does <em>not</em> update the product's Purchase Price master field. Number auto-assigns <code>GRN-000001</code>.</p></div>
+        <div class="callout watch"><div class="lbl">Ordering matters</div><p>Confirm this Receipt <em>before</em> you approve the Purchase Invoice below — if you approve the invoice first, the PO's status jumps straight to "invoiced" and this receipt's confirmation can no longer push it to "received," so the status history looks wrong even though nothing else is broken.</p></div>
+      </section>
+
+      <section class="mod" id="pi">
+        <div class="mod-head"><h2>Purchase Invoice</h2><span class="mod-tag">/purchase-invoices</span></div>
+        <p class="mod-intro">The vendor's bill, linked to PO-000001. Re-enter the 2% discount (it doesn't carry over from the order).</p>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Same numbers as the Purchase Order: Net Total = <b>144,900.00</b>. Number auto-assigns <code>PI-000001</code>.</p></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>Shipping Charges and Round Off on this form are shown in the on-screen total but never saved — there's no column for either on a Purchase Invoice. Leave both at 0; if you type something in and the saved Net Total doesn't reflect it, that's this known gap, not a mistake.</p></div>
+        <div class="callout expect"><div class="lbl">Expected — approve it</div><p>Accounts Payable increases by 144,900.00.</p></div>
+      </section>
+
+      <section class="mod" id="mp">
+        <div class="mod-head"><h2>Make Payment</h2><span class="mod-tag">/make-payments</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Vendor</td><td>Continental Import House</td></tr>
+          <tr><td>Instrument</td><td>Meezan Bank, amount 100,000</td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed, important</div>
+        <p>Approve this and Accounts Payable will drop by 100,000.00 in aggregate — but go check PI-000001 directly: <b>its balance is still 144,900.00 and its status is still unpaid.</b> Make Payment in this build never allocates against a specific invoice; only the separate Purchase Settlement screen (below) does that. This is the single most counter-intuitive result in the whole plan — expect it, don't debug it.</p></div>
+      </section>
+
+      <section class="mod" id="ps">
+        <div class="mod-head"><h2>Purchase Settlement</h2><span class="mod-tag">/purchase-settlements</span></div>
+        <p class="mod-intro">This is what actually pays down PI-000001. Two settlements, back to back.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>#</th><th>Account</th><th class="wrap">Line</th><th class="num">Amount</th></tr>
+          <tr><td>PS-000001</td><td>Meezan Bank</td><td>PI-000001</td><td class="num">100,000</td></tr>
+          <tr><td>PS-000002</td><td>Meezan Bank</td><td>PI-000001</td><td class="num">44,900</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">After PS-000001: 144,900.00 − 100,000.00 = 44,900.00 → partially_paid
+After PS-000002: 44,900.00  −  44,900.00 =      0.00 → paid</div></div>
+      </section>
+
+      <section class="mod" id="pr">
+        <div class="mod-head"><h2>Purchase Return</h2><span class="mod-tag">/purchase-returns</span></div>
+        <p class="mod-intro">Return 5 faulty stabilizers, linked to PI-000001.</p>
+        <div class="callout fixed"><div class="lbl">Fixed this session — verify it</div>
+        <p>Approving a Purchase Return used to <b>always fail</b> with "No expense account found," on every environment, regardless of your data — a one-character typo in the code (<code>account_type='Expense'</code> instead of <code>'expense'</code>) meant the lookup matched nothing. That's fixed. If you still get this error here, the fix didn't take effect and needs re-checking.</p></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">5 × 4,200 = 21,000.00     Tax 17% = 3,570.00     Net = 24,570.00
+PI-000001 balance: max(0, 0.00 − 24,570.00) = 0.00 → stays paid</div>
+        <p>PI-000001 was already fully paid via settlements above, so this return correctly has nowhere further to reduce — balance floors at 0 rather than going negative. Stock is <b>not</b> affected (same as the sales side). Number auto-assigns <code>PR-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="prf">
+        <div class="mod-head"><h2>Purchase Refund</h2><span class="mod-tag">/purchase-refunds</span></div>
+        <p class="mod-intro">Continental refunds part of the return in cash, linked to PR-000001.</p>
+        <div class="tbl-wrap"><table><tr><th>Instrument</th><th class="num">Amount</th></tr><tr><td>Meezan Bank</td><td class="num">10,000</td></tr></table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">PR-000001 unadjusted amount: 24,570.00 − 10,000.00 = 14,570.00 → partially_adjusted</div>
+        <p>Number auto-assigns <code>VR-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="dn">
+        <div class="mod-head"><h2>Debit Note</h2><span class="mod-tag">/debit-notes</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Contact name</td><td>Continental Import House</td></tr>
+          <tr><td>Account</td><td>Meezan Bank</td></tr>
+          <tr><td>Amount</td><td class="num">2,000</td></tr>
+          <tr><td>Invoice ref (free text)</td><td>PI-000001</td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch</div>
+        <p>Unlike a Credit Note, a Debit Note's "invoice ref" is just a text label — it is not actually linked to PI-000001 in the database. Approving this only moves the aggregate Accounts Payable balance by 2,000.00; PI-000001 itself (already at 0/paid) is untouched. Number auto-assigns <code>DN-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="ii">
+        <div class="mod-head"><h2>Import Invoice</h2><span class="mod-tag">/import-invoices</span></div>
+        <p class="mod-intro">A container of panel lights and chargers from Continental Import House, with landed costs.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Product</th><th class="num">Qty</th><th class="num">Unit price</th></tr>
+          <tr><td>LED Panel Light 18W</td><td class="num">500</td><td class="num">420</td></tr>
+          <tr><td>USB-C Charger 20W</td><td class="num">300</td><td class="num">650</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Header</th><th class="num">Value</th></tr>
+          <tr><td>Discount %</td><td class="num">1%</td></tr>
+          <tr><td>Shipping charges</td><td class="num">15,000</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Expense</th><th class="num">Amount</th></tr>
+          <tr><td>Customs Duty</td><td class="num">45,000</td></tr>
+          <tr><td>Freight</td><td class="num">20,000</td></tr>
+          <tr><td>Insurance</td><td class="num">8,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">Line 1: 500 × 420 = 210,000.00   (51.85% of gross)
+Line 2: 300 × 650 = 195,000.00   (48.15% of gross)
+Gross                = 405,000.00
+Discount 1%          =   4,050.00
+Net (invoice value)  = 405,000.00 − 4,050.00 + 15,000.00 shipping = 415,950.00
+Expenses total       =  45,000 + 20,000 + 8,000 = 73,000.00
+Total landed cost     = 415,950.00 + 73,000.00 = 488,950.00  ← this is Balance Amount at creation</div>
+        <p>There is no currency/exchange-rate field on this form at all — everything is assumed to already be in PKR. Whichever "distribution method" you pick on an expense line, the landed-cost split across the two products is always by value (51.85% / 48.15%) — the picker has no actual effect.</p></div>
+        <div class="callout fixed"><div class="lbl">Fixed this session — verify it</div>
+        <p>Approving an Import Invoice used to <b>always fail</b> with a database foreign-key error, on every environment — dead code tried to insert a journal-entry line against a journal entry that never existed. That dead code has been removed. If Approve still fails here, the fix didn't take.</p></div>
+        <div class="callout watch"><div class="lbl">Watch</div><p>Even after approving successfully, neither product's stock quantity nor its Purchase Price master field changes — this document has no receiving step of its own. If the goods have physically arrived, you'd still create a separate Purchase Receipt to bring them into stock.</p></div>
+      </section>
+
+      <!-- ================= INVENTORY & MANUFACTURING ================= -->
+
+      <section class="mod" id="sa">
+        <div class="mod-head"><h2>Inventory — Stock Adjustment</h2><span class="mod-tag">/stock-adjustments</span></div>
+        <p class="mod-intro">A recount finds more LED Bulbs on the shelf at Main Warehouse than the system shows.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Warehouse</td><td>Main Warehouse</td></tr>
+          <tr><td>Adjustment type</td><td>Stock Found (add)</td></tr>
+          <tr><td>Product line</td><td>LED Bulb 12W — Current qty: (whatever the system currently shows) — New qty: current + 50</td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>The "Stock Found" (add) vs "Stock Damage" (subtract) type you pick is <b>purely cosmetic</b> — on confirm, the system always sets quantity-on-hand to exactly whatever you typed in "New Qty," full stop. It never adds or subtracts a delta based on the type. So type the actual final count you want, not a "+50" — if you'd typed 50 expecting it to be added on top, you'd have wiped the stock down to 50 units instead. Number auto-assigns <code>SA-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="sm">
+        <div class="mod-head"><h2>Stock Movement (transfer)</h2><span class="mod-tag">/stock-movements</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>From</td><td>Main Warehouse</td></tr>
+          <tr><td>To</td><td>Shop Floor — Liberty Market</td></tr>
+          <tr><td>Product line</td><td>Ceiling Fan 56", qty 20</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Main Warehouse Ceiling Fan quantity −20, Shop Floor Ceiling Fan quantity +20. Number auto-assigns <code>SM-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="saud">
+        <div class="mod-head"><h2>Stock Audit</h2><span class="mod-tag">/stock-audits</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Warehouse</td><td>Shop Floor — Liberty Market</td></tr>
+          <tr><td>Line</td><td>Ceiling Fan 56", counted qty 19 (one short)</td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>Completing this audit does nothing to inventory — no variance is calculated, no adjustment is created, quantity-on-hand for Ceiling Fan stays at 20 regardless of the "19" you counted. A Stock Audit here is a record of a count, not a reconciliation tool; if you actually want to correct the shortfall, you have to go create a separate Stock Adjustment yourself. Number auto-assigns <code>SAU-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="sval">
+        <div class="mod-head"><h2>Scheduled Valuation</h2><span class="mod-tag">/scheduled-valuations</span></div>
+        <div class="tbl-wrap"><table><tr><th>Field</th><th>Value</th></tr><tr><td>Date</td><td>today</td></tr><tr><td>Narration</td><td>Month-end valuation — first trading month</td></tr></table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>This screen saves a date and a note and does nothing else — no value is computed here, ever. For a real stock value, go to Reports → Stock Valuation Report instead, which multiplies quantity-on-hand by each product's static Purchase Price. That price is never auto-updated by anything you did above (not the Purchase Receipt, not the Import Invoice) — if you want current-cost valuation, you'd have to edit each product's Purchase Price by hand.</p></div>
+      </section>
+
+      <section class="mod" id="bom">
+        <div class="mod-head"><h2>Manufacturing — Bill of Materials</h2><span class="mod-tag">/manufacturing (Job Order tab's BOM picker) or dedicated BOM screen</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Name</td><td>Emergency Light Kit — Standard Build</td></tr>
+          <tr><td>Output product</td><td>Emergency Light Kit (Assembled)</td></tr>
+          <tr><td>Output qty</td><td class="num">1</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Component</th><th class="num">Qty per output unit</th></tr>
+          <tr><td>Battery Pack 6V 4Ah</td><td class="num">1</td></tr>
+          <tr><td>LED Circuit Board</td><td class="num">1</td></tr>
+          <tr><td>Plastic Casing (Emergency Light)</td><td class="num">1</td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div><p>There is no cost field anywhere on a BOM. It is purely a bill of <em>quantities</em> — don't expect a rolled-up "cost per assembled unit" anywhere in the system.</p></div>
+      </section>
+
+      <section class="mod" id="wo">
+        <div class="mod-head"><h2>Work Order</h2><span class="mod-tag">/manufacturing</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>BOM</td><td>Emergency Light Kit — Standard Build</td></tr>
+          <tr><td>Warehouse</td><td>Main Warehouse</td></tr>
+          <tr><td>Planned qty</td><td class="num">50</td></tr>
+        </table></div>
+        <p>Start it, then Complete it with <b>produced qty = 40</b>.</p>
+        <div class="callout calc"><div class="lbl">Calc</div>
+        <div class="formula">factor = produced_qty ÷ BOM output_qty = 40 ÷ 1 = 40
+Battery Pack:    −(1 × 40) = −40
+LED Circuit Board: −(1 × 40) = −40
+Plastic Casing:   −(1 × 40) = −40
+Emergency Light Kit: +40 (Main Warehouse)</div>
+        <p>No GL/cost entry is created anywhere from this. Number auto-assigns <code>WO-000001</code>. Date and Due Date are now required.</p></div>
+      </section>
+
+      <section class="mod" id="dis">
+        <div class="mod-head"><h2>Disassembly Order</h2><span class="mod-tag">/disassembly</span></div>
+        <p class="mod-intro">Break 5 assembled kits back into parts — deliberately entering output quantities that <em>don't</em> match the original 1:1:1 BOM ratio, to prove the point below.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Product to disassemble</td><td>Emergency Light Kit (Assembled)</td></tr>
+          <tr><td>Quantity</td><td class="num">5</td></tr>
+          <tr><td>Warehouse</td><td>Main Warehouse</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table>
+          <tr><th class="wrap">Output component</th><th class="num">Qty</th></tr>
+          <tr><td>Battery Pack 6V 4Ah</td><td class="num">5</td></tr>
+          <tr><td>LED Circuit Board</td><td class="num">5</td></tr>
+          <tr><td>Plastic Casing (Emergency Light)</td><td class="num">4 <span class="small">(deliberately short by 1)</span></td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed</div>
+        <p>Complete it. It will succeed exactly as entered — Emergency Light Kit −5, Battery Pack +5, LED Circuit Board +5, Plastic Casing +4 — with no cross-check against the original BOM ratio at all. Output quantities on a Disassembly Order are pure free-text; the system will not stop you from "recovering" more or less material than the assembly actually used. Number auto-assigns <code>DS-000001</code>.</p></div>
+      </section>
+
+      <!-- ================= ACCOUNTS ================= -->
+
+      <section class="mod" id="banks">
+        <div class="mod-head"><h2>Accounts — Bank Accounts</h2><span class="mod-tag">/bank-accounts</span></div>
+        <p class="mod-intro">Create these two before the Receive Payment / Make Payment steps earlier in this plan.</p>
+        <div class="tbl-wrap"><table>
+          <tr><th>Name</th><th class="wrap">Bank</th><th class="wrap">Account #</th></tr>
+          <tr><td>Meezan Bank — Current Account</td><td>Meezan Bank Ltd</td><td>PK00-MEZN-0001234567</td></tr>
+          <tr><td>Cash in Hand</td><td>—</td><td>—</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Each is created at opening/current balance 0 and linked to its own new leaf account under the chart of accounts — you can watch its balance move by re-checking the Chart of Accounts page after each transaction above.</p></div>
+      </section>
+
+      <section class="mod" id="ft">
+        <div class="mod-head"><h2>Fund Transfer</h2><span class="mod-tag">/fund-transfers</span></div>
+        <div class="tbl-wrap"><table><tr><th>From</th><th>To</th><th class="num">Amount</th></tr><tr><td>Meezan Bank — Current Account</td><td>Cash in Hand</td><td class="num">50,000</td></tr></table></div>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Post it: Meezan Bank −50,000.00, Cash in Hand +50,000.00. Number auto-assigns <code>FT-000001</code>. From and To must differ — try picking the same account for both first and confirm it's rejected.</p></div>
+      </section>
+
+      <section class="mod" id="bd">
+        <div class="mod-head"><h2>Bank Deposit</h2><span class="mod-tag">/bank-deposits</span></div>
+        <div class="tbl-wrap"><table><tr><th>Target account</th><th class="num">Amount</th></tr><tr><td>Meezan Bank — Current Account</td><td class="num">30,000</td></tr></table></div>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Deposit it: Undeposited Funds −30,000.00, Meezan Bank +30,000.00. Number auto-assigns <code>BD-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="exp">
+        <div class="mod-head"><h2>Expenses</h2><span class="mod-tag">/expenses</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Paid from</td><td>Meezan Bank — Current Account</td></tr>
+          <tr><td>Line</td><td>Shop rent, account "Rent Expense", amount 25,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Approve it: Rent Expense +25,000.00, Meezan Bank −25,000.00. Number auto-assigns <code>E-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="oc">
+        <div class="mod-head"><h2>Other Collections / Other Payments</h2><span class="mod-tag">/other-collections · /other-payments</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Doc</th><th class="wrap">Contact</th><th class="wrap">Account</th><th class="num">Amount</th></tr>
+          <tr><td>Other Collection</td><td>Lahore Chamber of Commerce</td><td>Miscellaneous Income → Cash in Hand</td><td class="num">5,000</td></tr>
+          <tr><td>Other Payment</td><td>M. Iqbal — Legal Advisor</td><td>Legal Fees ← Meezan Bank</td><td class="num">3,000</td></tr>
+        </table></div>
+        <div class="callout watch"><div class="lbl">Watch</div><p>Other Contacts and Other Collections currently share the same numbering counter behind the scenes — creating one advances the other's next number too, so don't be surprised by a gap in either sequence.</p></div>
+      </section>
+
+      <section class="mod" id="ocs">
+        <div class="mod-head"><h2>Other Contact Settlement</h2><span class="mod-tag">/other-contact-settlements</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Field</th><th>Value</th></tr>
+          <tr><td>Contact name</td><td>Lahore Chamber of Commerce</td></tr>
+          <tr><td>Receivable line</td><td>Membership refund owed, 8,000</td></tr>
+          <tr><td>Received line</td><td>Cash, 8,000</td></tr>
+        </table></div>
+        <div class="callout calc"><div class="lbl">Calc</div><p>Received (8,000) ≥ Receivable (8,000), so on approve the status should jump straight to <b>completed</b>, not the usual "approved." Number auto-assigns <code>OCS-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="je">
+        <div class="mod-head"><h2>Journal Entry (manual)</h2><span class="mod-tag">/journal-entries</span></div>
+        <div class="tbl-wrap"><table>
+          <tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th></tr>
+          <tr><td>Depreciation Expense</td><td class="num">4,000</td><td class="num">0</td></tr>
+          <tr><td>Accumulated Depreciation</td><td class="num">0</td><td class="num">4,000</td></tr>
+        </table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Try posting with only one line first — it should reject unless total debits equal total credits. Fix it and post; Depreciation Expense and Accumulated Depreciation both move by 4,000.00. Number auto-assigns <code>JE-000001</code>.</p></div>
+      </section>
+
+      <section class="mod" id="reports">
+        <div class="mod-head"><h2>Reports cross-check</h2><span class="mod-tag">/reports</span></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed, read this before you check any report</div>
+        <p>Trial Balance, Profit &amp; Loss, Balance Sheet, Account Ledger, Transaction List and Audit Log are all built <em>only</em> from manually posted Journal Entries. None of the two dozen documents you approved above (every Sales/Purchase Invoice, every Payment, Return, Refund, Settlement, Credit/Debit Note, Bank Deposit, Fund Transfer, Expense) ever creates a Journal Entry — they move Chart of Accounts balances directly instead, through a separate code path. So:</p>
+        <ul class="plain">
+          <li><b>Trial Balance / P&amp;L / Balance Sheet / Account Ledger</b> will show <em>only</em> JE-000001's 4,000.00 depreciation entry — nothing else from this whole plan. That's expected, not missing data.</li>
+          <li><b>Chart of Accounts</b> page (balances per account) and <b>Bank Accounts</b> page correctly reflect every transaction above.</li>
+          <li><b>AR Aging</b> and <b>Customer Balance Report</b> correctly show Crescent Wholesale Traders' invoice at 34,280.00 outstanding.</li>
+          <li><b>AP Aging</b> and <b>Vendor Balance Report</b> correctly show Continental Import House's purchase invoice fully paid.</li>
+          <li>A vendor or customer's <b>Opening Balance</b> field (if you'd set one) never appears in any balance report — it's stored but never read anywhere.</li>
+        </ul></div>
+      </section>
+
+      <!-- ================= POS ================= -->
+
+      <section class="mod" id="pos">
+        <div class="mod-head"><h2>POS — counters, session, checkout</h2><span class="mod-tag">/pos/counters · /pos</span></div>
+        <div class="tbl-wrap"><table><tr><th>Field</th><th>Value</th></tr><tr><td>Counter name</td><td>Shop Floor Till 1</td></tr><tr><td>Warehouse</td><td>Shop Floor — Liberty Market</td></tr><tr><td>Cash account</td><td>Cash in Hand</td></tr></table></div>
+        <div class="callout expect"><div class="lbl">Expected — counter setup works fine</div><p>The counter saves normally; Warehouse and Cash Account are now enforced as required here (previously shown as required but not actually checked).</p></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed, significant</div>
+        <p>The POS Terminal screen's "Confirm &amp; Checkout" button has <b>no handler wired up at all</b> — clicking it does nothing, no matter what's in the cart. The tax line on that screen is also hardcoded to display 0.00 regardless of the products' actual tax rates, and the "Cash In / Cash Out" transfer feature has no backing storage (it always reports 0 in the Daily Summary). None of this is something you can fix by re-entering data correctly — a real POS sale cannot currently be completed through this screen. If you need to verify the checkout math itself (subtotal → tax → total → change due, and the resulting stock decrement), it has to be exercised through the API directly rather than the Terminal UI; that's a developer-level check, not a data-entry one.</p></div>
+      </section>
+
+      <section class="mod" id="barcode">
+        <div class="mod-head"><h2>Barcode Templates</h2><span class="mod-tag">/barcode-templates</span></div>
+        <div class="tbl-wrap"><table><tr><th>Field</th><th>Value</th></tr><tr><td>Name</td><td>Standard Shelf Label 40×25mm</td></tr><tr><td>Barcode type</td><td>CODE128</td></tr><tr><td>Shows</td><td>Product name, price, barcode</td></tr></table></div>
+        <div class="callout expect"><div class="lbl">Expected</div><p>Pure layout config — no calculation to verify here, just that it saves and Name rejects a blank/numbers-only value.</p></div>
+      </section>
+
+      <!-- ================= HR ================= -->
+
+      <section class="mod" id="hr">
+        <div class="mod-head"><h2>HR &amp; Payroll</h2><span class="mod-tag">/payroll (four tabs: Employees, Departments, Designations, Projects)</span></div>
+        <div class="tbl-wrap"><table><tr><th>Department</th></tr><tr><td>Sales</td></tr><tr><td>Warehouse &amp; Inventory</td></tr><tr><td>Accounts &amp; Finance</td></tr><tr><td>Management</td></tr></table></div>
+        <div class="tbl-wrap"><table><tr><th class="wrap">Designation</th><th>Department</th></tr>
+          <tr><td>General Manager</td><td>Management</td></tr>
+          <tr><td>Sales Executive</td><td>Sales</td></tr>
+          <tr><td>Accountant</td><td>Accounts &amp; Finance</td></tr>
+          <tr><td>Warehouse Supervisor</td><td>Warehouse &amp; Inventory</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table><tr><th>Employee</th><th class="wrap">Designation</th><th class="num">Salary</th></tr>
+          <tr><td>Ahmed Raza</td><td>General Manager</td><td class="num">150,000</td></tr>
+          <tr><td>Bilal Aslam</td><td>Sales Executive</td><td class="num">45,000</td></tr>
+          <tr><td>Sana Tariq</td><td>Accountant</td><td class="num">60,000</td></tr>
+          <tr><td>Kashif Mehmood</td><td>Warehouse Supervisor</td><td class="num">50,000</td></tr>
+          <tr><td>Nida Yousaf</td><td>Sales Executive</td><td class="num">42,000</td></tr>
+        </table></div>
+        <div class="tbl-wrap"><table><tr><th class="wrap">Project</th><th class="wrap">Linked customer</th><th class="num">Budget</th></tr>
+          <tr><td>Liberty Market Outlet Renovation</td><td>—</td><td class="num">500,000</td></tr>
+          <tr><td>Corporate Bulk Supply — Orbit Q3</td><td>Orbit Corporate Solutions (Pvt) Ltd</td><td class="num">1,200,000</td></tr>
+        </table></div>
+        <div class="callout bug"><div class="lbl">Known bug — not fixed, set expectations before you start</div>
+        <p>"HR &amp; Payroll" is CRUD on these four lists only — there is no salary run anywhere in this system. No gross/net calculation, no deductions, no payslip. Employee Name and Salary are now validated (name must contain a letter, salary can't be negative) — beyond that, don't look for a "Run Payroll" button; it doesn't exist. Projects have no effect on anything else in the system (not even the customer they're linked to) — they're a standalone list.</p></div>
+      </section>
+
+      <!-- ================= APPENDIX ================= -->
+
+      <section class="mod" id="issues">
+        <div class="mod-head"><h2>Appendix A — Known issues, all 25 in one place</h2></div>
+        <p class="mod-intro">Every non-obvious or defective behaviour called out throughout this plan, gathered here for reference. <span class="chip fixed">Fixed</span> items were corrected as part of this same work session — worth a quick regression check. Everything else is confirmed, current behaviour as of this plan's writing.</p>
+        <div class="issues">
+          <div class="issue"><div class="n">01</div><div class="body"><p><span class="chip fixed">Fixed</span> Purchase Return approval always failed ("No expense account found") — a capital-letter typo in the account-type lookup.</p><p class="where">server/routes/purchaseReturns.js</p></div></div>
+          <div class="issue"><div class="n">02</div><div class="body"><p><span class="chip fixed">Fixed</span> AR/AP/Undeposited Funds postings from 14 different transaction types landed on old, hidden, deactivated legacy accounts due to a naming-case mismatch — invisible unless "Show Inactive" was ticked on Chart of Accounts.</p><p class="where">14 route files, chart-of-accounts system_name lookups</p></div></div>
+          <div class="issue"><div class="n">03</div><div class="body"><p><span class="chip fixed">Fixed</span> Import Invoice approval always failed with a database foreign-key error — dead code tried to insert a journal-entry line against a non-existent journal entry.</p><p class="where">server/routes/importInvoices.js</p></div></div>
+          <div class="issue"><div class="n">04</div><div class="body"><p><span class="chip bug">Bug</span> Trial Balance, P&amp;L, Balance Sheet, Account Ledger, Transaction List and Audit Log only reflect manually-posted Journal Entries — none of the ~15 transactional modules post to that ledger at all.</p></div></div>
+          <div class="issue"><div class="n">05</div><div class="body"><p><span class="chip bug">Bug</span> Profit &amp; Loss's Cost of Goods Sold bucket is always 0 — no seeded account carries the specific type the report looks for.</p></div></div>
+          <div class="issue"><div class="n">06</div><div class="body"><p><span class="chip bug">Bug</span> Make Payments never reduces a specific Purchase Invoice's balance/status — only Purchase Settlements do. (Sales-side Receive Payments does not have this gap.)</p></div></div>
+          <div class="issue"><div class="n">07</div><div class="body"><p><span class="chip bug">Bug</span> Debit Notes cannot link to a specific Purchase Invoice (free-text reference only); Credit Notes can link to a specific Sales Invoice.</p></div></div>
+          <div class="issue"><div class="n">08</div><div class="body"><p><span class="chip watch">Watch</span> Stock only ever moves via: Sales Delivery confirm, Purchase Receipt confirm, Stock Adjustment confirm, Stock Movement complete, Work Order complete, Disassembly Order complete, and POS sale. Sales/Purchase Invoices, Sales/Purchase Returns and Import Invoices never touch stock.</p></div></div>
+          <div class="issue"><div class="n">09</div><div class="body"><p><span class="chip bug">Bug</span> Stock Adjustment's "type" (add/subtract) is decorative — it always sets quantity-on-hand to the exact "New Qty" entered, never a delta.</p></div></div>
+          <div class="issue"><div class="n">10</div><div class="body"><p><span class="chip bug">Bug</span> Stock Audit completion never creates a variance or an adjustment — pure record-keeping.</p></div></div>
+          <div class="issue"><div class="n">11</div><div class="body"><p><span class="chip bug">Bug</span> Scheduled Valuations compute nothing — a to-do list, not a calculator. Real valuation lives in Reports → Stock Valuation (qty × static Purchase Price).</p></div></div>
+          <div class="issue"><div class="n">12</div><div class="body"><p><span class="chip watch">Watch</span> No costing method (FIFO/weighted-average) exists anywhere — Purchase Price is a manually-maintained field, never updated by any purchase, receipt, or import transaction.</p></div></div>
+          <div class="issue"><div class="n">13</div><div class="body"><p><span class="chip watch">Watch</span> BOM / Work Orders / Disassembly Orders have zero cost logic and zero GL impact — pure quantity movements.</p></div></div>
+          <div class="issue"><div class="n">14</div><div class="body"><p><span class="chip bug">Bug</span> No payroll calculation exists anywhere — "HR &amp; Payroll" is master-data CRUD only (Employees/Departments/Designations/Projects).</p></div></div>
+          <div class="issue"><div class="n">15</div><div class="body"><p><span class="chip bug">Bug</span> The Sales Target &amp; Commission report is broken — it credits every sales person with the entire company's sales × a flat, hardcoded 5%, since no document actually links to a specific sales person.</p></div></div>
+          <div class="issue"><div class="n">16</div><div class="body"><p><span class="chip watch">Watch</span> Recurring Invoices generate real draft Sales Invoices (via the ordinary SI- series) but never carry over the profile's header discount % or shipping charges — both reset to 0.</p></div></div>
+          <div class="issue"><div class="n">17</div><div class="body"><p><span class="chip watch">Watch</span> Quotation→Order→Invoice (and the purchase-side equivalents) copy customer/vendor and line items on conversion, but never header discount % or shipping — both reset to 0 and must be re-entered at every stage.</p></div></div>
+          <div class="issue"><div class="n">18</div><div class="body"><p><span class="chip bug">Bug</span> Purchase Invoice's Shipping Charges and Round Off fields, and Purchase Return's Round Off field, display on screen but are never saved.</p></div></div>
+          <div class="issue"><div class="n">19</div><div class="body"><p><span class="chip bug">Bug</span> Sales Invoice's Round Off field is likewise cosmetic only, never persisted.</p></div></div>
+          <div class="issue"><div class="n">20</div><div class="body"><p><span class="chip bug">Bug</span> The POS Terminal's Confirm &amp; Checkout button has no click handler — a POS sale cannot be completed end-to-end through that screen.</p></div></div>
+          <div class="issue"><div class="n">21</div><div class="body"><p><span class="chip bug">Bug</span> POS "Cash In / Cash Out" has no backing storage — always reports 0 in the Daily Summary.</p></div></div>
+          <div class="issue"><div class="n">22</div><div class="body"><p><span class="chip watch">Watch</span> Company Setup's Currency, Fiscal Year Start and Date Format fields are stored but never read anywhere else in the app.</p></div></div>
+          <div class="issue"><div class="n">23</div><div class="body"><p><span class="chip watch">Watch</span> The company logo and per-document print-template toggles live in this browser's local storage, not the server — they won't follow you to another device or user.</p></div></div>
+          <div class="issue"><div class="n">24</div><div class="body"><p><span class="chip watch">Watch</span> CRM Leads have no "convert to Customer" feature. Prospects do have a working convert endpoint, but no button anywhere in the UI calls it.</p></div></div>
+          <div class="issue"><div class="n">25</div><div class="body"><p><span class="chip watch">Watch</span> A vendor's or customer's Opening Balance is stored but never included in any balance/aging report.</p></div></div>
+        </div>
+      </section>
+
+      <section class="mod" id="validation">
+        <div class="mod-head"><h2>Appendix B — validation changes made this session</h2></div>
+        <p class="mod-intro">Every form in the system was audited. In addition to the specific fixes flagged inline above, the general pattern applied everywhere: a "name"-type field must now contain at least one letter (blank, whitespace-only, purely numeric, or symbols-only text is rejected before save); percentage fields are capped 0–100; money/quantity fields that should never be negative now reject negative input; required fields that only <em>looked</em> required (an asterisk with no actual check behind it) now genuinely block save with an inline message. This touched every Sales, Purchase, Accounts, Inventory/Manufacturing, and CRM/HR/POS/Setup form in the app — if you hit a field anywhere in this plan that rejects bad input with a message, that's this change working as intended.</p>
+        <div class="backtotop"><a href="#cover">↑ Back to top</a></div>
+      </section>
+
+    </div>
+  </main>
+</div>

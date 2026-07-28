@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SalesRefund, SalesRefundInstrument, RefundMode } from '../types/salesRefund';
 import { createSalesRefund, updateSalesRefund, getSalesRefund } from '../api/salesRefunds';
+import { validatePositive } from '../utils/validators';
 
 interface Customer { id: number; print_name: string; }
 interface COA { id: number; name: string; }
@@ -36,7 +37,6 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
   const custRef = useRef<HTMLDivElement>(null);
 
   const [customerId,  setCustomerId]  = useState('');
-  const [customerName, setCustomerName] = useState('');
   const [date,        setDate]        = useState(new Date().toISOString().slice(0, 10));
   const [reference,   setReference]   = useState('');
   const [comments,    setComments]    = useState('');
@@ -44,6 +44,8 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
   const [instruments, setInstruments] = useState<SalesRefundInstrument[]>([emptyInstrument()]);
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
+  const [errors,      setErrors]      = useState<Record<string, string>>({});
+  const [instErrors,  setInstErrors]  = useState<Record<number, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const status = refund?.status || 'draft';
@@ -66,7 +68,6 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
     if (!refund) return;
     getSalesRefund(refund.id).then(full => {
       setCustomerId(String(full.customer_id));
-      setCustomerName(full.customer_name || '');
       setCustomerSearch(full.customer_name || '');
       setDate(full.date?.slice(0, 10) ?? '');
       setReference(full.reference ?? '');
@@ -86,7 +87,6 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
 
   function selectCustomer(c: Customer) {
     setCustomerId(String(c.id));
-    setCustomerName(c.print_name);
     setCustomerSearch(c.print_name);
     setShowCustDrop(false);
   }
@@ -97,9 +97,25 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
 
   const total = instruments.reduce((s, inst) => s + Number(inst.amount || 0), 0);
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!customerId) e.customerId = 'Customer is required.';
+    if (!date) e.date = 'Date is required.';
+    if (total <= 0) e.instruments = 'At least one instrument with an amount greater than zero is required.';
+
+    const ie: Record<number, string> = {};
+    instruments.forEach((inst, i) => {
+      const amtErr = validatePositive(Number(inst.amount || 0), 'Amount');
+      if (amtErr) ie[i] = amtErr;
+    });
+    setInstErrors(ie);
+    setErrors(e);
+    return Object.keys(e).length === 0 && Object.keys(ie).length === 0;
+  }
+
   async function handleSave() {
     setError('');
-    if (!customerId) { setError('Customer is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
@@ -151,7 +167,7 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
               </label>
               <div className="relative">
                 <div
-                  className="flex items-center justify-between border-2 border-red-400 rounded px-2.5 py-1.5 cursor-pointer bg-white"
+                  className={`flex items-center justify-between border-2 rounded px-2.5 py-1.5 cursor-pointer bg-white ${errors.customerId ? 'border-red-500' : 'border-red-400'}`}
                   onClick={() => setShowCustDrop(v => !v)}>
                   <input
                     type="text"
@@ -180,6 +196,7 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
                   </div>
                 )}
               </div>
+              {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
             </div>
 
             {/* Number — green +▼ | text | ↺ */}
@@ -200,7 +217,7 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 Date <span className="text-red-500">*</span>
               </label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <div className={`flex items-center border rounded overflow-hidden ${errors.date ? 'border-red-500' : 'border-gray-300'}`}>
                 <input type="date"
                   className="flex-1 px-2 py-1.5 text-sm focus:outline-none border-none"
                   value={date} onChange={e => setDate(e.target.value)} />
@@ -212,6 +229,7 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
                   </svg>
                 </span>
               </div>
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
 
             {/* Reference */}
@@ -267,9 +285,10 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
                     {/* Amount */}
                     <td className="border border-gray-300 px-2 py-1.5">
                       <input type="number" min="0" step="any"
-                        className="w-full text-right text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        className={`w-full text-right text-xs border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 ${instErrors[i] ? 'border-red-500' : 'border-gray-300'}`}
                         value={inst.amount}
                         onChange={e => updateInst(i, { amount: Number(e.target.value) })} />
+                      {instErrors[i] && <p className="text-xs text-red-500 mt-0.5">{instErrors[i]}</p>}
                     </td>
                     {/* Action */}
                     <td className="border border-gray-300 px-2 py-1.5">
@@ -286,6 +305,7 @@ export default function SalesRefundForm({ refund, onClose, onSaved }: Props) {
                 ))}
               </tbody>
             </table>
+            {errors.instruments && <p className="text-xs text-red-500 mt-1">{errors.instruments}</p>}
           </div>
 
           {/* Account Adjustments checkbox */}

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Warehouse } from '../types/warehouse';
 import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from '../api/warehouses';
+import { validateEmail, validateName, validatePhone, validateZip } from '../utils/validators';
+import { PK_PROVINCES, PK_CITIES, COUNTRIES } from '../data/locations';
 
 function exportWarehousesToExcel(rows: Warehouse[]) {
   const headers = ['Name', 'Address Line 1', 'Address Line 2', 'City', 'State', 'Zip', 'Country', 'Contact Person', 'Email', 'Phone', 'Fax', 'Status'];
@@ -87,16 +89,6 @@ function printWarehouses(rows: Warehouse[]) {
   setTimeout(() => { win.print(); }, 400);
 }
 
-const COUNTRIES = [
-  'Pakistan', 'Afghanistan', 'Australia', 'Bahrain', 'Bangladesh', 'Canada', 'China',
-  'Egypt', 'France', 'Germany', 'India', 'Indonesia', 'Iran', 'Iraq', 'Italy',
-  'Jordan', 'Kazakhstan', 'Kuwait', 'Malaysia', 'Maldives', 'Morocco', 'Nepal',
-  'Netherlands', 'Nigeria', 'Oman', 'Philippines', 'Qatar', 'Russia', 'Saudi Arabia',
-  'Singapore', 'South Africa', 'South Korea', 'Spain', 'Sri Lanka', 'Sudan',
-  'Sweden', 'Switzerland', 'Syria', 'Thailand', 'Tunisia', 'Turkey', 'UAE',
-  'United Kingdom', 'United States', 'Uzbekistan', 'Yemen',
-];
-
 const PAGE_SIZES = [10, 25, 50, 100];
 
 interface FormState {
@@ -134,6 +126,7 @@ export default function WarehousesPage() {
   const [form,       setForm]       = useState<FormState>(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const [errors,     setErrors]     = useState<Partial<Record<keyof FormState, string>>>({});
 
   // List state
   const [search,   setSearch]   = useState('');
@@ -147,25 +140,38 @@ export default function WarehousesPage() {
   useEffect(() => { load(); }, []);
 
   function openAdd() {
-    setEditing(null); setForm(EMPTY_FORM); setError(''); setView('form');
+    setEditing(null); setForm(EMPTY_FORM); setError(''); setErrors({}); setView('form');
   }
   function openEdit(w: Warehouse) {
-    setEditing(w); setForm(warehouseToForm(w)); setError(''); setView('form');
+    setEditing(w); setForm(warehouseToForm(w)); setError(''); setErrors({}); setView('form');
   }
-  function closeForm() { setView('list'); setEditing(null); setError(''); }
+  function closeForm() { setView('list'); setEditing(null); setError(''); setErrors({}); }
 
   const set = (key: keyof FormState) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }));
+      setErrors((prev) => ({ ...prev, [key]: undefined }));
+    };
+
+  function validate(): boolean {
+    const e: Partial<Record<keyof FormState, string>> = {};
+    const nameErr = validateName(form.name, 'Warehouse Name'); if (nameErr) e.name = nameErr;
+    const emailErr = validateEmail(form.email); if (emailErr) e.email = emailErr;
+    const phoneErr = validatePhone(form.phone); if (phoneErr) e.phone = phoneErr;
+    const faxErr = validatePhone(form.fax); if (faxErr) e.fax = faxErr;
+    const zipErr = validateZip(form.zip); if (zipErr) e.zip = zipErr;
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
 
   async function handleSave(andNew = false) {
-    if (!form.name.trim()) { setError('Warehouse Name is required'); return; }
+    if (!validate()) return;
     setError(''); setSaving(true);
     try {
       if (editing) await updateWarehouse(editing.id, { ...form });
       else await createWarehouse({ ...form });
       await load();
-      if (andNew) { setEditing(null); setForm(EMPTY_FORM); }
+      if (andNew) { setEditing(null); setForm(EMPTY_FORM); setErrors({}); }
       else closeForm();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Save failed');
@@ -211,9 +217,10 @@ export default function WarehousesPage() {
                 Warehouse Name <span className="text-red-500">*</span>
               </label>
               <input type="text"
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.name ? 'border-red-500' : 'border-gray-300'}`}
                 placeholder="Warehouse Name"
                 value={form.name} onChange={set('name')} />
+              {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
             </div>
             {/* Address Line 1 | Address Line 2 */}
             <div className="grid grid-cols-2 gap-4">
@@ -236,21 +243,40 @@ export default function WarehousesPage() {
             <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                <input type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  placeholder="City" value={form.city} onChange={set('city')} />
+                {form.country === 'Pakistan' ? (
+                  <select
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                    value={form.city} onChange={set('city')}>
+                    <option value="">-Choose-</option>
+                    {PK_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (
+                  <input type="text"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    placeholder="City" value={form.city} onChange={set('city')} />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                <input type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  placeholder="State" value={form.state} onChange={set('state')} />
+                {form.country === 'Pakistan' ? (
+                  <select
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                    value={form.state} onChange={set('state')}>
+                    <option value="">-Choose-</option>
+                    {PK_PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                ) : (
+                  <input type="text"
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    placeholder="State" value={form.state} onChange={set('state')} />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Zip</label>
                 <input type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.zip ? 'border-red-500' : 'border-gray-300'}`}
                   placeholder="Zip" value={form.zip} onChange={set('zip')} />
+                {errors.zip && <p className="text-xs text-red-500 mt-1">{errors.zip}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
@@ -273,20 +299,23 @@ export default function WarehousesPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                 <input type="email"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.email ? 'border-red-500' : 'border-gray-300'}`}
                   placeholder="Email" value={form.email} onChange={set('email')} />
+                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                 <input type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.phone ? 'border-red-500' : 'border-gray-300'}`}
                   placeholder="Phone" value={form.phone} onChange={set('phone')} />
+                {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Fax</label>
                 <input type="text"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.fax ? 'border-red-500' : 'border-gray-300'}`}
                   placeholder="Fax" value={form.fax} onChange={set('fax')} />
+                {errors.fax && <p className="text-xs text-red-500 mt-1">{errors.fax}</p>}
               </div>
             </div>
           </div>

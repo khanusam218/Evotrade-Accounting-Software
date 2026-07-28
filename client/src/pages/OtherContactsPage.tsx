@@ -1,6 +1,6 @@
 ﻿import { apiFetch } from '../api/apiFetch';
 import { useEffect, useState } from 'react';
-import { validateEmail, validatePhone } from '../utils/validators';
+import { validateEmail, validateName, validatePhone } from '../utils/validators';
 
 interface OtherContact {
   id: number; code: string; print_name: string; category?: string;
@@ -30,14 +30,13 @@ function ContactForm({ initial, onSave, onClose }: { initial: OtherContact | nul
   const [form, setForm] = useState<Partial<OtherContact>>({ is_active: true, ...initial });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [saveNew, setSaveNew] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const set = (k: keyof OtherContact, v: any) => { setForm(f => ({ ...f, [k]: v })); setError(''); };
 
   const submit = async (andNew: boolean) => {
-    if (!form.print_name?.trim()) { setError('Name is required'); return; }
     const errs: Record<string, string> = {};
+    const nameErr = validateName(form.print_name || '', 'Name'); if (nameErr) errs.print_name = nameErr;
     const phoneErr = validatePhone(form.phone || ''); if (phoneErr) errs.phone = phoneErr;
     const emailErr = validateEmail(form.email || ''); if (emailErr) errs.email = emailErr;
     setFieldErrors(errs);
@@ -76,7 +75,8 @@ function ContactForm({ initial, onSave, onClose }: { initial: OtherContact | nul
           {/* Row 1: Name */}
           <div>
             <label className={lbl}>Name <span className="text-red-500">*</span></label>
-            <input className={inp} placeholder="Contact Name" value={form.print_name || ''} onChange={e => set('print_name', e.target.value)} />
+            <input className={`${inp} ${fieldErrors.print_name ? 'border-red-500' : ''}`} placeholder="Contact Name" value={form.print_name || ''} onChange={e => set('print_name', e.target.value)} />
+            {fieldErrors.print_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.print_name}</p>}
           </div>
 
           {/* Row 2: Category | Contact Person */}

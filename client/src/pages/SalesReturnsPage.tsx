@@ -107,8 +107,8 @@ export default function SalesReturnsPage() {
   if (appliedFilters.unadjustedFrom) visible = visible.filter(r => Number(r.unadjusted_amount) >= Number(appliedFilters.unadjustedFrom));
   if (appliedFilters.unadjustedTo)  visible = visible.filter(r => Number(r.unadjusted_amount) <= Number(appliedFilters.unadjustedTo));
   visible.sort((a, b) => {
-    let av: string | number = (a as Record<string, unknown>)[sort.col] as string | number ?? '';
-    let bv: string | number = (b as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let av: string | number = (a as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let bv: string | number = (b as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
     return av < bv ? (sort.dir === 'asc' ? -1 : 1) : av > bv ? (sort.dir === 'asc' ? 1 : -1) : 0;

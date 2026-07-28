@@ -1,8 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextNumber(client) {
+  await getOrCreateSeries(client, 'Purchase Refunds', 'VR-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Purchase Refunds'
@@ -137,19 +140,26 @@ router.post('/:id/approve', async (req, res) => {
     const total = Number(rf.total_amount);
 
     // Vendor gives us money: DR each instrument (we receive cash), CR A/P (clearing vendor credit)
-    const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+    const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
     if (!apRows.length) return res.status(400).json({ error: 'Accounts Payable account not found' });
     const apChange = apRows[0].normal_balance === 'credit' ? -total : total;
     await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange, apRows[0].id]);
 
+    const jeLines = [changeToLine(apRows[0], apChange, `Purchase Refund ${rf.number}`)];
     const { rows: instruments } = await client.query('SELECT * FROM purchase_refund_instruments WHERE refund_id=$1', [rf.id]);
     for (const inst of instruments) {
       if (!inst.account_id) continue;
-      const { rows: coa } = await client.query('SELECT normal_balance FROM chart_of_accounts WHERE id=$1', [inst.account_id]);
+      const { rows: coa } = await client.query('SELECT * FROM chart_of_accounts WHERE id=$1', [inst.account_id]);
       if (!coa.length) continue;
       const bankChange = coa[0].normal_balance === 'debit' ? Number(inst.amount) : -Number(inst.amount);
       await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [bankChange, inst.account_id]);
+      jeLines.push(changeToLine(coa[0], bankChange, `Purchase Refund ${rf.number}`));
     }
+
+    await postJournalEntry(client, {
+      date: rf.date, memo: `Purchase Refund ${rf.number}`, reference: rf.number,
+      source_type: 'PurchaseRefund', source_id: rf.id, lines: jeLines,
+    });
 
     if (rf.return_id) {
       const newUnadj = Math.max(0, Number(rf.return_unadj || 0) - total);
@@ -175,7 +185,7 @@ router.post('/:id/cancel', async (req, res) => {
 
     if (rf.status === 'approved') {
       const total = Number(rf.total_amount);
-      const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='accounts_payable' LIMIT 1`);
+      const { rows: apRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsPayable' LIMIT 1`);
       if (apRows.length) {
         const apChange = apRows[0].normal_balance === 'credit' ? total : -total;
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [apChange, apRows[0].id]);
@@ -188,6 +198,10 @@ router.post('/:id/cancel', async (req, res) => {
         const bankChange = coa[0].normal_balance === 'debit' ? -Number(inst.amount) : Number(inst.amount);
         await client.query('UPDATE chart_of_accounts SET current_balance=current_balance+$1 WHERE id=$2', [bankChange, inst.account_id]);
       }
+      await reverseJournalEntriesForSource(client, {
+        source_type: 'PurchaseRefund', source_id: rf.id,
+        date: new Date().toISOString().slice(0, 10), memo: `Cancel Purchase Refund ${rf.number}`,
+      });
       if (rf.return_id) {
         const { rows: retRows } = await client.query('SELECT * FROM purchase_returns WHERE id=$1', [rf.return_id]);
         if (retRows.length) {

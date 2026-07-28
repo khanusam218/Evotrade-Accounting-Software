@@ -1,7 +1,9 @@
-﻿import { apiFetch } from '../api/apiFetch';
+﻿import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
 import { useEffect, useState } from 'react';
 import { getCrmCalls, createCrmCall, updateCrmCall, deleteCrmCall } from '../api/crmCalls';
 import { CrmCall, CallStatus } from '../types/crmCall';
+import { validateName, validatePhone, validatePositive } from '../utils/validators';
+import SearchSelect from '../components/SearchSelect';
 
 interface Customer { id: number; print_name: string; }
 
@@ -49,9 +51,28 @@ function CallForm({ onSave, onClose, initial, customers }: {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const set = (k: keyof CrmCall, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
+  const [employeeOptions, setEmployeeOptions] = useState<string[]>([]);
+  useEffect(() => {
+    apiFetch('/api/employees').then(parseJsonOrThrow)
+      .then(d => setEmployeeOptions((d as { name: string }[]).map(e => e.name))).catch(() => {});
+  }, []);
+
+  function validate() {
+    const errs: Record<string, string> = {};
+    if (!(form.subject ?? '').trim()) errs.subject = 'Subject is required.';
+    const contactErr = validateName(form.contact_name ?? '', 'Contact name');
+    if ((form.contact_name ?? '').trim() && contactErr) errs.contact_name = contactErr;
+    const phoneErr = validatePhone(form.phone ?? ''); if (phoneErr) errs.phone = phoneErr;
+    const durErr = validatePositive(form.duration_minutes ?? 0, 'Duration'); if (durErr) errs.duration_minutes = durErr;
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   const submit = async () => {
+    if (!validate()) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true); setError('');
     try { await onSave(form); onClose(); }
     catch (e: unknown) { setError(e instanceof Error ? e.message : 'Save failed'); }
@@ -68,7 +89,8 @@ function CallForm({ onSave, onClose, initial, customers }: {
           {error && <p className="text-red-600 text-sm">{error}</p>}
           <div>
             <label className="label">Subject *</label>
-            <input className="input" value={form.subject || ''} onChange={e => set('subject', e.target.value)} />
+            <input className={`input ${fieldErrors.subject ? 'border-red-500' : ''}`} value={form.subject || ''} onChange={e => set('subject', e.target.value)} />
+            {fieldErrors.subject && <p className="text-xs text-red-500 mt-1">{fieldErrors.subject}</p>}
           </div>
           <div>
             <label className="label">Customer</label>
@@ -78,8 +100,16 @@ function CallForm({ onSave, onClose, initial, customers }: {
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Contact Name</label><input className="input" value={form.contact_name || ''} onChange={e => set('contact_name', e.target.value)} /></div>
-            <div><label className="label">Phone</label><input className="input" value={form.phone || ''} onChange={e => set('phone', e.target.value)} /></div>
+            <div>
+              <label className="label">Contact Name</label>
+              <input className={`input ${fieldErrors.contact_name ? 'border-red-500' : ''}`} value={form.contact_name || ''} onChange={e => set('contact_name', e.target.value)} />
+              {fieldErrors.contact_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.contact_name}</p>}
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input className={`input ${fieldErrors.phone ? 'border-red-500' : ''}`} value={form.phone || ''} onChange={e => set('phone', e.target.value)} />
+              {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+            </div>
             <div>
               <label className="label">Call Type</label>
               <select className="input" value={form.call_type || 'outbound'} onChange={e => set('call_type', e.target.value)}>
@@ -95,8 +125,15 @@ function CallForm({ onSave, onClose, initial, customers }: {
               </select>
             </div>
             <div><label className="label">Call Date</label><input type="datetime-local" className="input" value={form.call_date?.slice(0, 16) || ''} onChange={e => set('call_date', e.target.value)} /></div>
-            <div><label className="label">Duration (mins)</label><input type="number" className="input" value={form.duration_minutes || ''} onChange={e => set('duration_minutes', Number(e.target.value))} /></div>
-            <div><label className="label">Assigned To</label><input className="input" value={form.assigned_to || ''} onChange={e => set('assigned_to', e.target.value)} /></div>
+            <div>
+              <label className="label">Duration (mins)</label>
+              <input type="number" min={0} className={`input ${fieldErrors.duration_minutes ? 'border-red-500' : ''}`} value={form.duration_minutes || ''} onChange={e => set('duration_minutes', Number(e.target.value))} />
+              {fieldErrors.duration_minutes && <p className="text-xs text-red-500 mt-1">{fieldErrors.duration_minutes}</p>}
+            </div>
+            <div>
+              <label className="label">Assigned To</label>
+              <SearchSelect value={form.assigned_to || ''} onChange={v => set('assigned_to', v)} options={employeeOptions} placeholder="Type to search employee" />
+            </div>
             <div>
               <label className="label">Status</label>
               <select className="input" value={form.status || 'planned'} onChange={e => set('status', e.target.value)}>

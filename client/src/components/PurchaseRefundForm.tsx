@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { PurchaseRefund, PurchaseRefundInstrument, PRefundMode } from '../types/purchaseRefund';
 import { PREFUND_STATUS_LABELS } from '../types/purchaseRefund';
 import { createPurchaseRefund, updatePurchaseRefund, getPurchaseRefund, getNextPurchaseRefundNumber } from '../api/purchaseRefunds';
+import { validatePositive } from '../utils/validators';
 
 interface Vendor  { id: number; print_name: string; }
 interface PReturn { id: number; number: string; date: string; net_amount: number; unadjusted_amount: number; status: string; }
@@ -38,6 +39,7 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
   const [allocations, setAllocations] = useState<Record<number, string>>({});
   const [saving,      setSaving]      = useState(false);
   const [error,       setError]       = useState('');
+  const [errors,      setErrors]      = useState<Record<string, string>>({});
 
   useEffect(() => {
     apiFetch('/api/vendors?limit=500').then(r => r.json()).then(d => setVendors(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : [])));
@@ -73,11 +75,24 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
   const total = instruments.reduce((s, inst) => s + Number(inst.amount || 0), 0);
   const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!date) e.date = 'Date is required.';
+    const validInst = instruments.filter(inst => Number(inst.amount) > 0);
+    if (!validInst.length) e.instruments = 'At least one instrument with amount is required.';
+    instruments.forEach((inst, i) => {
+      const amtErr = validatePositive(Number(inst.amount || 0), 'Amount'); if (amtErr) e[`amount_${i}`] = amtErr;
+      if (Number(inst.amount || 0) > 0 && !inst.account_id) e[`account_${i}`] = 'Account is required.';
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave(e: React.FormEvent, continueEdit = false) {
     e.preventDefault(); setError('');
-    if (!vendorId) { setError('Vendor is required'); return; }
+    if (!validate()) return;
     const validInst = instruments.filter(inst => Number(inst.amount) > 0);
-    if (!validInst.length) { setError('At least one instrument with amount is required'); return; }
     setSaving(true);
     try {
       const payload = {
@@ -111,11 +126,12 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
             <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
-                <select className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <select className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.vendor ? 'border-red-500' : 'border-gray-300'}`}
                   value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Type to search vendor</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                 </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -132,8 +148,9 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
-                <input type="date" className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                <input type="date" className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
@@ -179,11 +196,12 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
                         </select>
                       </td>
                       <td className="px-2 py-1.5">
-                        <select className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-gray-50"
+                        <select className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-gray-50 ${errors[`account_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                           value={inst.account_id ?? ''} onChange={e => updInst(i, { account_id: e.target.value ? Number(e.target.value) : null })}>
                           <option value="">Select account</option>
                           {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                         </select>
+                        {errors[`account_${i}`] && <p className="text-xs text-red-500 mt-1">{errors[`account_${i}`]}</p>}
                       </td>
                       <td className="px-2 py-1.5">
                         <input className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
@@ -206,8 +224,9 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
                       </td>
                       <td className="px-2 py-1.5">
                         <input type="number" min="0" step="any"
-                          className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                          className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`amount_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                           value={inst.amount} onChange={e => updInst(i, { amount: Number(e.target.value) })} />
+                        {errors[`amount_${i}`] && <p className="text-xs text-red-500 mt-1">{errors[`amount_${i}`]}</p>}
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -225,6 +244,7 @@ export default function PurchaseRefundForm({ refund, onClose, onSaved }: Props) 
                 className="mt-2 text-sm text-green-600 hover:text-green-700 hover:underline font-medium">
                 + Add Line
               </button>
+              {errors.instruments && <p className="text-xs text-red-500 mt-1">{errors.instruments}</p>}
             </div>
 
             {/* Account Adjustments */}

@@ -102,8 +102,8 @@ export default function SalesRefundsPage() {
   if (appliedFilters.unadjustedTo)  visible = visible.filter(r => Number(r.unadjusted_amount) <= Number(appliedFilters.unadjustedTo));
   if (appliedFilters.instrument)    visible = visible.filter(r => (r.bank_account_name ?? '').toLowerCase().includes(appliedFilters.instrument.toLowerCase()));
   visible.sort((a, b) => {
-    let av: string | number = (a as Record<string, unknown>)[sort.col] as string | number ?? '';
-    let bv: string | number = (b as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let av: string | number = (a as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
+    let bv: string | number = (b as unknown as Record<string, unknown>)[sort.col] as string | number ?? '';
     if (typeof av === 'string') av = av.toLowerCase();
     if (typeof bv === 'string') bv = bv.toLowerCase();
     return av < bv ? (sort.dir === 'asc' ? -1 : 1) : av > bv ? (sort.dir === 'asc' ? 1 : -1) : 0;

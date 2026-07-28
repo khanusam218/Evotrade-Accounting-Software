@@ -1,15 +1,12 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function generateCustomerCode(client) {
-  const { rows: nsRows } = await client.query(
-    `SELECT prefix, next_number, padding FROM number_series WHERE name = 'Customers' FOR UPDATE`
-  );
-  if (!nsRows.length) throw new Error('Customer number series not configured');
-  const { prefix, next_number, padding } = nsRows[0];
+  const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Customers', 'C-', 6);
 
   const { rows: maxRows } = await client.query(
     `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(code, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
@@ -53,20 +50,24 @@ function buildWhere(query) {
 
 // GET /api/customers/next-code  — MUST be before /:id
 router.get('/next-code', async (_req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
-      `SELECT prefix, next_number, padding FROM number_series WHERE name = 'Customers'`
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Number series not found' });
-    const { prefix, next_number, padding } = rows[0];
+    await client.query('BEGIN');
+    const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Customers', 'C-', 6);
 
-    const { rows: maxRows } = await pool.query(
+    const { rows: maxRows } = await client.query(
       `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(code, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
        FROM customers WHERE code ~ '^[A-Za-z]+-[0-9]+$'`
     );
     const previewNum = Math.max(Number(next_number), Number(maxRows[0].max_num) + 1);
+    await client.query('COMMIT');
     res.json({ code: `${prefix}${String(previewNum).padStart(padding, '0')}` });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 // GET /api/customers
@@ -166,11 +167,11 @@ router.post('/', async (req, res, next) => {
         code, print_name.trim(),
         email_1, email_2, email_3,
         phone_1, phone_2, phone_3,
-        longitude, latitude,
+        longitude || null, latitude || null,
         opening_balance, credit_limit,
         default_discount_percent, discount_account_id || null,
         withholding_tax_percent, category_id || null,
-        contact_person, is_active, profile_image,
+        contact_person, is_active, profile_image || null,
         address_line_1 || null, address_line_2 || null,
         city || null, state_province || null, country || null, zip_code || null,
       ]
@@ -242,11 +243,11 @@ router.put('/:id', async (req, res, next) => {
         print_name.trim(),
         email_1, email_2, email_3,
         phone_1, phone_2, phone_3,
-        longitude, latitude,
+        longitude || null, latitude || null,
         opening_balance, credit_limit,
         default_discount_percent, discount_account_id || null,
         withholding_tax_percent, category_id || null,
-        contact_person, is_active, profile_image,
+        contact_person, is_active, profile_image || null,
         address_line_1 || null, address_line_2 || null,
         city || null, state_province || null, country || null, zip_code || null,
         req.params.id,

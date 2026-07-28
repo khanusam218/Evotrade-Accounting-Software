@@ -1,5 +1,6 @@
 import { apiFetch } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
+import { validateName } from '../utils/validators';
 
 interface Category { id: number; name: string; }
 interface Counter {
@@ -95,7 +96,8 @@ function CounterDetail({ initial, categories, onSave, onClose }: {
   }, [dropOpen]);
 
   async function save(mode: 'new' | 'close') {
-    if (!name.trim()) { setError('Name is required'); return; }
+    const nameErr = validateName(name, 'Name');
+    if (nameErr) { setError(nameErr); return; }
     if (catIds.length === 0) { setError('At least one product category is required'); return; }
     setSaving(true); setError('');
     try {

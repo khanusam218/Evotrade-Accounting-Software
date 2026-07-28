@@ -2,7 +2,9 @@
 import type { CrmLead } from '../types/crmLead';
 import { LEAD_SOURCES, LEAD_STATUSES, LEAD_INDUSTRIES } from '../types/crmLead';
 import { createCrmLead, updateCrmLead, getNextLeadNumber } from '../api/crmLeads';
-import { validateEmail, validatePhone } from '../utils/validators';
+import { validateEmail, validateName, validatePhone, validatePositive } from '../utils/validators';
+import { apiFetch, parseJsonOrThrow } from '../api/apiFetch';
+import SearchSelect from './SearchSelect';
 
 interface Props { lead: CrmLead | null; onClose: () => void; onSaved: () => void; }
 
@@ -37,8 +39,15 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
   const statusRef   = useRef<HTMLDivElement>(null);
   const industryRef = useRef<HTMLDivElement>(null);
 
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<string[]>([]);
+
   useEffect(() => {
     if (!isEdit) getNextLeadNumber().then(d => setNextNumber(d.number)).catch(() => {});
+    apiFetch('/api/crm-masters/ticket-tags').then(parseJsonOrThrow)
+      .then(d => setTagOptions((d as { name: string }[]).map(t => t.name))).catch(() => {});
+    apiFetch('/api/employees').then(parseJsonOrThrow)
+      .then(d => setEmployeeOptions((d as { name: string }[]).map(e => e.name))).catch(() => {});
   }, [isEdit]);
 
   // Outside-click closes all dropdowns
@@ -57,8 +66,13 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
     const leadName = name.trim() || contactName.trim() || company.trim();
     if (!leadName) { setError('Contact or Company is required'); return; }
     const errs: Record<string, string> = {};
+    if (name.trim())        { const err = validateName(name, 'Lead name');        if (err) errs.name = err; }
+    if (contactName.trim()) { const err = validateName(contactName, 'Contact');    if (err) errs.contactName = err; }
+    if (company.trim())     { const err = validateName(company, 'Company');        if (err) errs.company = err; }
     const emailErr = validateEmail(email); if (emailErr) errs.email = emailErr;
     const phoneErr = validatePhone(phone); if (phoneErr) errs.phone = phoneErr;
+    const revErr = validatePositive(annualRevenue, 'Annual revenue'); if (revErr) errs.annualRevenue = revErr;
+    const empErr = validatePositive(numEmployees, 'Number of employees'); if (empErr) errs.numEmployees = empErr;
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) { setError('Please fix the highlighted fields before saving.'); return; }
     setSaving(true);
@@ -142,7 +156,8 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
             {/* Company */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Company</label>
-              <input type="text" placeholder="Company" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={company} onChange={e => setCompany(e.target.value)} />
+              <input type="text" placeholder="Company" className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.company ? 'border-red-500' : 'border-gray-300'}`} value={company} onChange={e => setCompany(e.target.value)} />
+              {fieldErrors.company && <p className="text-xs text-red-500 mt-1">{fieldErrors.company}</p>}
             </div>
 
             {/* Website */}
@@ -154,10 +169,11 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
             {/* Contact — red border searchable */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Contact <span className="text-red-500">*</span></label>
-              <div className="flex items-center border-2 border-red-400 rounded overflow-hidden">
-                <input type="text" placeholder="Type to search contact" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" value={contactName} onChange={e => setContactName(e.target.value)} />
+              <div className={`flex items-center border-2 rounded overflow-hidden ${fieldErrors.contactName ? 'border-red-500' : 'border-red-400'}`}>
+                <input type="text" placeholder="Type contact person name" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" value={contactName} onChange={e => setContactName(e.target.value)} />
                 <span className="px-2 text-gray-400"><Chevron /></span>
               </div>
+              {fieldErrors.contactName && <p className="text-xs text-red-500 mt-1">{fieldErrors.contactName}</p>}
             </div>
           </div>
 
@@ -217,7 +233,7 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
             {/* Tag */}
             <div>
               <label className="block text-xs text-gray-500 mb-1">Tag</label>
-              <input type="text" placeholder="Type to search tag status" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={tag} onChange={e => setTag(e.target.value)} />
+              <SearchSelect value={tag} onChange={setTag} options={tagOptions} placeholder="Type to search tag" />
             </div>
 
             {/* Industry — searchable select */}
@@ -250,14 +266,12 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
           <div className="grid grid-cols-4 gap-4">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Assigned To</label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
-                <input type="text" placeholder="Type to search employee" className="flex-1 px-2 py-1.5 text-sm focus:outline-none min-w-0" value={assignedTo} onChange={e => setAssignedTo(e.target.value)} />
-                <span className="px-2 text-gray-400"><Chevron /></span>
-              </div>
+              <SearchSelect value={assignedTo} onChange={setAssignedTo} options={employeeOptions} placeholder="Type to search employee" />
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Annual Revenue</label>
-              <input type="number" min="0" step="any" placeholder="Annual Revenue" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={annualRevenue || ''} onChange={e => setAnnualRevenue(Number(e.target.value))} />
+              <input type="number" min="0" step="any" placeholder="Annual Revenue" className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.annualRevenue ? 'border-red-500' : 'border-gray-300'}`} value={annualRevenue || ''} onChange={e => setAnnualRevenue(Number(e.target.value))} />
+              {fieldErrors.annualRevenue && <p className="text-xs text-red-500 mt-1">{fieldErrors.annualRevenue}</p>}
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Phone</label>
@@ -266,7 +280,8 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Number of employees</label>
-              <input type="number" min="0" placeholder="Number Employee" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={numEmployees || ''} onChange={e => setNumEmployees(Number(e.target.value))} />
+              <input type="number" min="0" placeholder="Number Employee" className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.numEmployees ? 'border-red-500' : 'border-gray-300'}`} value={numEmployees || ''} onChange={e => setNumEmployees(Number(e.target.value))} />
+              {fieldErrors.numEmployees && <p className="text-xs text-red-500 mt-1">{fieldErrors.numEmployees}</p>}
             </div>
           </div>
 
@@ -279,7 +294,8 @@ export default function CrmLeadForm({ lead, onClose, onSaved }: Props) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Lead Name</label>
-              <input type="text" placeholder="Lead / Opportunity name" className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400" value={name} onChange={e => setName(e.target.value)} />
+              <input type="text" placeholder="Lead / Opportunity name" className={`w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 ${fieldErrors.name ? 'border-red-500' : 'border-gray-300'}`} value={name} onChange={e => setName(e.target.value)} />
+              {fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
             </div>
           </div>
 

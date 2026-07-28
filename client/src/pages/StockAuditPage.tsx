@@ -1,5 +1,6 @@
 import { apiFetch } from '../api/apiFetch';
 import { useEffect, useRef, useState } from 'react';
+import { validatePositive } from '../utils/validators';
 
 interface Warehouse { id: number; name: string; }
 interface Product   { id: number; name: string; }
@@ -38,6 +39,13 @@ const emptyLine = (): AuditLine => ({ product_id: '', description: '', warehouse
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+interface FieldErrors {
+  warehouse_id?: string;
+  date?: string;
+  lines?: string;
+}
+type LineErrors = Partial<Record<'quantity', string>>;
+
 const SortIcon = () => (
   <svg className="inline-block ml-1 w-3 h-3 opacity-50" viewBox="0 0 24 24" fill="currentColor">
     <path d="M7 10l5-5 5 5H7zm0 4l5 5 5-5H7z" />
@@ -55,6 +63,8 @@ export default function StockAuditPage() {
   const [lines,      setLines]      = useState<AuditLine[]>([emptyLine()]);
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  const [errors,     setErrors]     = useState<FieldErrors>({});
+  const [lineErrors, setLineErrors] = useState<LineErrors[]>([]);
   const [page,       setPage]       = useState(1);
   const [pageSize,   setPageSize]   = useState(50);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -81,11 +91,13 @@ export default function StockAuditPage() {
     setForm({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
     setLines([emptyLine()]);
     setError('');
+    setErrors({});
+    setLineErrors([]);
     setView('form');
   }
 
   async function openEdit(a: StockAudit) {
-    setEditing(a); setError('');
+    setEditing(a); setError(''); setErrors({}); setLineErrors([]);
     try {
       const r = await apiFetch(`/api/stock-audits/${a.id}`);
       const full: StockAudit = await r.json();
@@ -101,10 +113,11 @@ export default function StockAuditPage() {
     setView('form');
   }
 
-  function closeForm() { setView('list'); setEditing(null); setError(''); load(); }
+  function closeForm() { setView('list'); setEditing(null); setError(''); setErrors({}); load(); }
 
   function updLine(i: number, patch: Partial<AuditLine>) {
     setLines(prev => prev.map((l, j) => j === i ? { ...l, ...patch } : l));
+    setLineErrors(prev => prev.map((le, j) => j === i ? {} : le));
   }
   function confirmLine(i: number) {
     setLines(ls => {
@@ -116,8 +129,29 @@ export default function StockAuditPage() {
     setLines(prev => { const n = prev.filter((_, j) => j !== i); return n.length ? n : [emptyLine()]; });
   }
 
+  function validate(): boolean {
+    const e: FieldErrors = {};
+    if (!form.warehouse_id) e.warehouse_id = 'Warehouse is required.';
+    if (!form.date) e.date = 'Date is required.';
+
+    const validLines = lines.filter(l => l.product_id !== '');
+    if (validLines.length === 0) e.lines = 'At least one product line is required.';
+
+    const le: LineErrors[] = lines.map(l => {
+      if (l.product_id === '') return {};
+      const lineErr: LineErrors = {};
+      const qErr = validatePositive(l.quantity, 'Quantity'); if (qErr) lineErr.quantity = qErr;
+      return lineErr;
+    });
+    if (le.some(x => Object.keys(x).length > 0)) e.lines = e.lines || 'Please fix the errors in the product lines.';
+
+    setErrors(e);
+    setLineErrors(le);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave() {
-    if (!form.warehouse_id) { setError('Warehouse is required'); return; }
+    if (!validate()) return;
     setError(''); setSaving(true);
     try {
       const payload = {
@@ -202,12 +236,13 @@ tbody td{padding:6px 8px;border-bottom:1px solid #ddd;}</style></head><body>
             <div className="flex-1 max-w-xs">
               <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse <span className="text-red-500">*</span></label>
               <select
-                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-white ${errors.warehouse_id ? 'border-red-500' : 'border-gray-300'}`}
                 value={form.warehouse_id}
-                onChange={e => setForm(f => ({ ...f, warehouse_id: e.target.value ? Number(e.target.value) : '' }))}>
+                onChange={e => { setForm(f => ({ ...f, warehouse_id: e.target.value ? Number(e.target.value) : '' })); setErrors(prev => ({ ...prev, warehouse_id: undefined })); }}>
                 <option value="">-Choose-</option>
                 {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
+              {errors.warehouse_id && <p className="text-xs text-red-500 mt-1">{errors.warehouse_id}</p>}
             </div>
 
             <div>
@@ -226,10 +261,10 @@ tbody td{padding:6px 8px;border-bottom:1px solid #ddd;}</style></head><body>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-              <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
+              <div className={`flex items-center border rounded overflow-hidden ${errors.date ? 'border-red-500' : 'border-gray-300'}`}>
                 <input type="date" className="px-2 py-2 text-sm focus:outline-none" value={form.date}
-                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+                  onChange={e => { setForm(f => ({ ...f, date: e.target.value })); setErrors(prev => ({ ...prev, date: undefined })); }} />
                 <button type="button" onClick={() => setForm(f => ({ ...f, date: '' }))} className="px-2 text-gray-400 hover:text-gray-700">✕</button>
                 <span className="px-2 text-gray-400">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -237,6 +272,7 @@ tbody td{padding:6px 8px;border-bottom:1px solid #ddd;}</style></head><body>
                   </svg>
                 </span>
               </div>
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
           </div>
 
@@ -269,6 +305,7 @@ tbody td{padding:6px 8px;border-bottom:1px solid #ddd;}</style></head><body>
           </div>
 
           {/* Lines table */}
+          {errors.lines && <p className="text-xs text-red-500 mb-2">{errors.lines}</p>}
           <div className="border border-gray-200 rounded mb-6">
             <table className="w-full text-sm">
               <thead>
@@ -306,9 +343,10 @@ tbody td{padding:6px 8px;border-bottom:1px solid #ddd;}</style></head><body>
                     </td>
                     <td className="px-4 py-2 w-28 align-top">
                       <input type="number" min={0} step="any"
-                        className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                        className={`w-full border rounded px-3 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`}
                         value={line.quantity}
                         onChange={e => updLine(i, { quantity: Number(e.target.value) })} />
+                      {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>
                     <td className="px-4 py-2 text-center w-20 align-top">
                       <div className="flex items-center justify-center gap-2 pt-1">

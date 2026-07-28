@@ -1,5 +1,5 @@
 ﻿import { apiFetch } from '../api/apiFetch';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import SalesPersonForm from '../components/SalesPersonForm';
 import type { SalesPerson, SalesPersonFilters } from '../types/salesperson';
 
@@ -92,8 +92,8 @@ export default function SalesPersonsPage() {
   const appliedCount = Object.values(appliedFilters).filter(Boolean).length;
 
   function handlePrint() {
-    const headers = ['Name', 'Status', 'Application User Email', 'Branch'];
-    const rows = persons.map(p => [p.print_name, p.status ?? '', p.application_user_email ?? '', p.branch_name ?? '']);
+    const headers = ['Name', 'Status', 'Application User', 'Branch'];
+    const rows = persons.map(p => [p.print_name, p.status ?? '', p.application_user_login ?? '', p.branch_name ?? '']);
     const w = window.open('', '_blank', 'width=900,height=600');
     if (!w) return;
     const body = rows.map(r =>
@@ -109,8 +109,8 @@ export default function SalesPersonsPage() {
   }
 
   function handleExport() {
-    const headers = ['Name', 'Status', 'Application User Email', 'Branch'];
-    const rows = persons.map(p => [p.print_name, p.status ?? '', p.application_user_email ?? '', p.branch_name ?? '']);
+    const headers = ['Name', 'Status', 'Application User', 'Branch'];
+    const rows = persons.map(p => [p.print_name, p.status ?? '', p.application_user_login ?? '', p.branch_name ?? '']);
     const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`;
     const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -194,24 +194,30 @@ export default function SalesPersonsPage() {
               <th className="px-6 py-3 text-left font-semibold text-gray-900 cursor-pointer hover:bg-gray-100" onClick={() => handleSort('status')}>
                 Status <SortIcon field="status" />
               </th>
-              <th className="px-6 py-3 text-left font-semibold text-gray-900">Application User Email</th>
+              <th className="px-6 py-3 text-left font-semibold text-gray-900">Application User</th>
               <th className="px-6 py-3 text-left font-semibold text-gray-900">Branch</th>
               <th className="px-6 py-3 text-left font-semibold text-gray-900">Action</th>
             </tr>
           </thead>
           <tbody>
-            {persons.length === 0 && (
+            {loading ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                  Loading…
+                </td>
+              </tr>
+            ) : persons.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-orange-500 font-medium">
                   No record found
                 </td>
               </tr>
             )}
-            {persons.map(p => (
+            {!loading && persons.map(p => (
               <tr key={p.id} className="border-b border-gray-200 hover:bg-gray-50">
                 <td className="px-6 py-3 text-blue-600 font-medium cursor-pointer hover:underline">{p.print_name}</td>
                 <td className="px-6 py-3 text-gray-700 capitalize">{p.status}</td>
-                <td className="px-6 py-3 text-gray-700">{p.application_user_email || '—'}</td>
+                <td className="px-6 py-3 text-gray-700">{p.application_user_login || '—'}</td>
                 <td className="px-6 py-3 text-gray-700">{p.branch_name || '—'}</td>
                 <td className="px-6 py-3">
                   <div className="flex items-center gap-2">

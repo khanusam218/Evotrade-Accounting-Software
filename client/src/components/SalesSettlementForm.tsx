@@ -6,6 +6,7 @@ import {
   createSalesSettlement, updateSalesSettlement, getSalesSettlement,
   getOpenInvoices, getNextSettlementNumber, getReceivedPayments,
 } from '../api/salesSettlements';
+import { validatePositive } from '../utils/validators';
 
 interface Customer { id: number; print_name: string; }
 interface COA      { id: number; id2?: number; name: string; }
@@ -45,10 +46,10 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
   const [date,            setDate]            = useState(new Date().toISOString().slice(0, 10));
   const [makeSettlements, setMakeSettlements] = useState(true);
   const [comments,        setComments]        = useState('');
-  const [lines,           setLines]           = useState<SalesSettlementLine[]>([]);
   const [saving,          setSaving]          = useState(false);
   const [savingContinue,  setSavingContinue]  = useState(false);
   const [error,           setError]           = useState('');
+  const [errors,          setErrors]          = useState<Record<string, string>>({});
 
   // Allocate amounts for receivables checkboxes
   const [receivableAllocs, setReceivableAllocs] = useState<Record<number, number>>({});
@@ -98,7 +99,6 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
       setDate(full.date?.slice(0, 10) ?? '');
       setComments(full.notes ?? '');
       setMakeSettlements(full.auto_settle ?? true);
-      setLines(full.lines ?? []);
       const allocs: Record<number, number> = {};
       (full.lines ?? []).forEach(l => { allocs[l.invoice_id] = l.amount; });
       setReceivableAllocs(allocs);
@@ -149,11 +149,36 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
     };
   }
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!customerId) e.customerId = 'Customer is required.';
+    if (!date) e.date = 'Date is required.';
+    if (Object.keys(receivableAllocs).length === 0) e.receivables = 'Select at least one receivable to settle.';
+
+    for (const [id, amt] of Object.entries(receivableAllocs)) {
+      const inv = openInvoices.find(i => i.id === Number(id));
+      const posErr = validatePositive(Number(amt), 'Allocated amount');
+      if (posErr) { e.receivables = posErr; break; }
+      if (inv && Number(amt) > Number(inv.balance_amount)) {
+        e.receivables = 'Allocated amount cannot exceed the invoice balance.'; break;
+      }
+    }
+    for (const [id, amt] of Object.entries(receivedAllocs)) {
+      const pmt = receivedPayments.find(p => p.id === Number(id));
+      const posErr = validatePositive(Number(amt), 'Allocated amount');
+      if (posErr) { e.received = posErr; break; }
+      if (pmt && Number(amt) > Number(pmt.balance_amount)) {
+        e.received = 'Allocated amount cannot exceed the payment balance.'; break;
+      }
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!customerId) { setError('Customer is required'); return; }
-    if (Object.keys(receivableAllocs).length === 0) { setError('Select at least one receivable to settle'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       if (isEdit) await updateSalesSettlement(settlement!.id, buildPayload());
@@ -166,7 +191,7 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
 
   async function handleSaveAndContinue() {
     setError('');
-    if (!customerId) { setError('Customer is required'); return; }
+    if (!validate()) return;
     setSavingContinue(true);
     try {
       if (isEdit) await updateSalesSettlement(settlement!.id, buildPayload());
@@ -210,12 +235,13 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
                 <select
-                  className="w-full border border-red-400 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.customerId ? 'border-red-500' : 'border-red-400'}`}
                   value={customerId} onChange={e => setCustomerId(e.target.value)} required
                 >
                   <option value="">Type to search customer</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
                 </select>
+                {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -247,9 +273,10 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
                 <input
                   type="date"
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                  className={`w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                   value={date} onChange={e => setDate(e.target.value)} required
                 />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
             </div>
 
@@ -323,6 +350,7 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
                   </tbody>
                 </table>
               </div>
+              {errors.receivables && <p className="text-xs text-red-500 mt-1">{errors.receivables}</p>}
             </div>
 
             {/* Received payments table */}
@@ -384,6 +412,7 @@ export default function SalesSettlementForm({ settlement, onClose, onSaved }: Pr
                   </tbody>
                 </table>
               </div>
+              {errors.received && <p className="text-xs text-red-500 mt-1">{errors.received}</p>}
             </div>
 
             {/* Comments */}

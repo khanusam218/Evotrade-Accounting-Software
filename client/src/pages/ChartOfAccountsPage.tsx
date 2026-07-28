@@ -152,7 +152,7 @@ export default function ChartOfAccountsPage() {
     finally { setDeletingId(null); }
   }
 
-  function handleFormSaved(saved: Account, addNew: boolean) {
+  function handleFormSaved(_saved: Account, addNew: boolean) {
     fetchAccounts();
     if (addNew) {
       setEditTarget(null); setDefaultParent(null); setFormKey((k) => k + 1);

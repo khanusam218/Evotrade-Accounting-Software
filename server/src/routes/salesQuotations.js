@@ -1,13 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeries } = require('../utils');
 
 async function nextNumber(client) {
-  const { rows: nsRows } = await client.query(
-    `SELECT prefix, next_number, padding FROM number_series WHERE name='Sales Quotations' FOR UPDATE`
-  );
-  if (!nsRows.length) throw new Error('Sales Quotation number series not configured');
-  const { prefix, next_number, padding } = nsRows[0];
+  const { prefix, next_number, padding } = await getOrCreateSeries(client, 'Sales Quotations', 'SQ-', 6);
   const { rows: maxRows } = await client.query(
     `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(number,'[^0-9]','','g') AS INTEGER)),0) AS max_num
      FROM sales_quotations WHERE number ~ '^SQ-[0-9]+$'`

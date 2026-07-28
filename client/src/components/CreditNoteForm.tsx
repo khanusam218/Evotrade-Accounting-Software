@@ -5,6 +5,7 @@ import type { CreditNote, CNFormData } from '../types/creditNote';
 import type { SalesInvoice } from '../types/salesInvoice';
 import { getAccountsLookup } from '../api/accounts';
 import { createCreditNote, getCreditNote, getNextCNNumber, updateCreditNote } from '../api/creditNotes';
+import { validateName } from '../utils/validators';
 
 interface Props {
   creditNote: CreditNote | null;
@@ -157,7 +158,7 @@ export default function CreditNoteForm({ creditNote, onClose, onSaved }: Props) 
   function validate() {
     const e: Record<string, string> = {};
     if (!date)               e.date    = 'Date is required';
-    if (!contactName.trim()) e.contact = 'Contact is required';
+    const contactErr = validateName(contactName, 'Contact'); if (contactErr) e.contact = contactErr;
     if (!accountId)          e.account = 'Account is required';
     if (!amount || totalAmt <= 0) e.amount = 'Amount must be greater than zero';
     if (totalAllocated > totalAmt && totalAmt > 0) e.alloc = 'Allocations exceed credit note amount';

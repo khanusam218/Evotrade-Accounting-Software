@@ -12,6 +12,7 @@ import type { AdjustmentType } from '../api/adjustmentTypes';
 
 interface Product    { id: number; name: string; }
 interface COAccount  { id: number; name: string; code: string; }
+interface Warehouse  { id: number; name: string; }
 
 interface TypeFormState {
   name:        string;
@@ -36,13 +37,14 @@ interface Filters {
 
 interface FormState {
   adjustment_type_id: number | '';
+  warehouse_id: number | '';
   date: string;
   reference: string;
   notes: string;
 }
 
 const EMPTY_FILTERS: Filters = { number: '', dateFrom: '', dateTo: '', typeId: '', reference: '', status: '', productId: '', description: '', serialNumber: '', showVoid: false };
-const EMPTY_FORM: FormState  = { adjustment_type_id: '', date: new Date().toISOString().split('T')[0], reference: '', notes: '' };
+const EMPTY_FORM: FormState  = { adjustment_type_id: '', warehouse_id: '', date: new Date().toISOString().split('T')[0], reference: '', notes: '' };
 const emptyLine = (): StockAdjustmentLine => ({ product_id: null, current_qty: 0, new_qty: 0, unit_cost: 0, notes: null });
 const PAGE_SIZES = [10, 25, 50, 100];
 
@@ -92,8 +94,9 @@ function printAdjustments(rows: StockAdjustment[]) {
 }
 
 export default function StockAdjustmentsPage() {
-  const [items,    setItems]    = useState<StockAdjustment[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const [items,      setItems]      = useState<StockAdjustment[]>([]);
+  const [products,   setProducts]   = useState<Product[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [view,       setView]       = useState<'list' | 'form' | 'type-form'>('list');
   const [editing,    setEditing]    = useState<StockAdjustment | null>(null);
@@ -139,6 +142,7 @@ export default function StockAdjustmentsPage() {
       setProducts(Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []))
     );
     apiFetch('/api/chart-of-accounts').then(r => r.json()).then(d => setAccounts(Array.isArray(d) ? d : []));
+    apiFetch('/api/warehouses').then(r => r.json()).then(d => setWarehouses(Array.isArray(d) ? d : []));
     getAdjustmentTypes().then(d => setAdjTypes(d)).catch(() => {});
   }, []);
 
@@ -156,10 +160,10 @@ export default function StockAdjustmentsPage() {
     setEditing(item); setError('');
     try {
       const full = await getStockAdjustment(item.id);
-      setForm({ adjustment_type_id: (full as StockAdjustment & { adjustment_type_id?: number }).adjustment_type_id || '', date: full.date?.slice(0,10) || '', reference: full.reference || '', notes: full.notes || '' });
+      setForm({ adjustment_type_id: (full as StockAdjustment & { adjustment_type_id?: number }).adjustment_type_id || '', warehouse_id: full.warehouse_id || '', date: full.date?.slice(0,10) || '', reference: full.reference || '', notes: full.notes || '' });
       setLines(full.lines?.length ? full.lines : [emptyLine()]);
     } catch {
-      setForm({ adjustment_type_id: '', date: item.date?.slice(0,10) || '', reference: item.reference || '', notes: item.notes || '' });
+      setForm({ adjustment_type_id: '', warehouse_id: item.warehouse_id || '', date: item.date?.slice(0,10) || '', reference: item.reference || '', notes: item.notes || '' });
       setLines([emptyLine()]);
     }
     setView('form');
@@ -206,10 +210,11 @@ export default function StockAdjustmentsPage() {
 
   async function handleSave(andNew = false) {
     if (!form.adjustment_type_id) { setError('Adjustment Type is required'); return; }
+    if (!form.warehouse_id) { setError('Warehouse is required'); return; }
     setError(''); setSaving(true);
     try {
       const payload = {
-        adjustment_type_id: Number(form.adjustment_type_id), date: form.date,
+        adjustment_type_id: Number(form.adjustment_type_id), warehouse_id: Number(form.warehouse_id), date: form.date,
         reference: form.reference || null, notes: form.notes || null,
         lines: lines.filter(l => l.product_id),
       };
@@ -295,13 +300,22 @@ export default function StockAdjustmentsPage() {
           {error && <div className="mb-4 rounded bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
 
           {/* Fields row */}
-          <div className="grid grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-5 gap-4 mb-4">
             {/* Adjustment Type */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Adjustment Type <span className="text-red-500">*</span></label>
               <select className={inp} value={form.adjustment_type_id} onChange={setF('adjustment_type_id')}>
                 <option value="">-Choose-</option>
                 {adjTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+
+            {/* Warehouse */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse <span className="text-red-500">*</span></label>
+              <select className={inp} value={form.warehouse_id} onChange={setF('warehouse_id')}>
+                <option value="">Select warehouse…</option>
+                {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
             </div>
 

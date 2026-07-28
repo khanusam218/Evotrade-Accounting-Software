@@ -1,6 +1,4 @@
 require('dotenv').config();
-const path    = require('path');
-const fs      = require('fs');
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');
@@ -58,6 +56,7 @@ const otherContactsRouter            = require('./routes/otherContacts');
 const prospectsRouter                = require('./routes/prospects');
 const couriersRouter                 = require('./routes/couriers');
 const salesPersonsRouter             = require('./routes/salesPersons');
+const usersRouter                    = require('./routes/users');
 const departmentsRouter              = require('./routes/departments');
 const designationsRouter             = require('./routes/designations');
 const employeesRouter                = require('./routes/employees');
@@ -76,6 +75,7 @@ const dashboardRouter                = require('./routes/dashboard');
 const reportsRouter                  = require('./routes/reports');
 const scheduledValuationsRouter      = require('./routes/scheduledValuations');
 const stockAuditsRouter              = require('./routes/stockAudits');
+const customFieldsRouter             = require('./routes/customFields');
 
 const pool = require('./db');
 
@@ -90,8 +90,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(rateLimitGeneral);
 
 app.use('/api/auth', authLimiter);
-app.use('/api', (req, _res, next) => {
-  if (req.path === '/health' || req.path.startsWith('/auth')) {
+app.use((req, _res, next) => {
+  if (req.path === '/api/health' || req.path.startsWith('/api/auth')) {
     const companyId = 'evotrade';
     return pool.companyAls.run({ companyId }, () => next());
   }
@@ -153,6 +153,7 @@ app.use('/api/other-contacts',            otherContactsRouter);
 app.use('/api/prospects',                 prospectsRouter);
 app.use('/api/couriers',                  couriersRouter);
 app.use('/api/sales-persons',             salesPersonsRouter);
+app.use('/api/users',                     usersRouter);
 app.use('/api/departments',               departmentsRouter);
 app.use('/api/designations',              designationsRouter);
 app.use('/api/employees',                 employeesRouter);
@@ -171,21 +172,9 @@ app.use('/api/barcode-templates',         barcodeTemplatesRouter);
 app.use('/api/crm-masters',               crmMastersRouter);
 app.use('/api/dashboard',                 dashboardRouter);
 app.use('/api/reports',                   reportsRouter);
+app.use('/api/custom-fields',             customFieldsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-
-// Serve the built React app (built into server/public, see vite.config.ts)
-// when present, so a single Node process can host both the API and the
-// frontend on shared hosting. Built inside server/ rather than referenced
-// from client/dist so it travels with the server directory even on hosts
-// whose deploy runtime doesn't carry sibling folders alongside the app root.
-const clientDist = path.join(__dirname, '..', 'public');
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get(/^(?!\/api\/).*/, (_req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
-}
 
 app.use((err, _req, res, _next) => {
   console.error('[API Error]', err?.message || err?.toString(), err?.code || '');

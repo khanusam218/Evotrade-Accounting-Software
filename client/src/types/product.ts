@@ -47,6 +47,8 @@ export interface Product {
   manage_purchase_tax: boolean;
   is_sold: boolean;
   sale_price: number | null;
+  sale_tax_id: number | null;
+  sale_tax_name: string | null;
   mrp: number | null;
   mrp_exclusive_of_tax: boolean;
   dont_allow_public: boolean;
@@ -54,6 +56,10 @@ export interface Product {
   description: string | null;
   short_description: string | null;
   created_at: string;
+  image: string | null;
+  principal_vendor_id: number | null;
+  principal_vendor_name: string | null;
+  hs_code: string | null;
 }
 
 export interface ProductFormData {
@@ -77,6 +83,7 @@ export interface ProductFormData {
   // Sales
   is_sold: boolean;
   sale_price: string;
+  sale_tax_id: string;
   mrp: string;
   mrp_exclusive_of_tax: boolean;
   dont_allow_public: boolean;
@@ -85,6 +92,9 @@ export interface ProductFormData {
   // Detail tab
   description: string;
   short_description: string;
+  image?: string | null;
+  principal_vendor_id?: string;
+  hs_code?: string;
 }
 
 export interface ProductsResponse {
@@ -100,13 +110,6 @@ export interface ProductFilters {
   type?: string;
   category_id?: string;
   brand_id?: string;
+  principal_vendor_id?: string;
   is_active?: string;
-}
-
-export interface ProductStockLevel {
-  id: number;
-  warehouse_id: number;
-  warehouse_name: string;
-  qty_on_hand: number;
-  min_stock_level: number;
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PurchaseReturn, PurchaseReturnLine } from '../types/purchaseReturn';
 import { PR_STATUS_LABELS } from '../types/purchaseReturn';
 import { createPurchaseReturn, updatePurchaseReturn, getPurchaseReturn, getNextPurchaseReturnNumber } from '../api/purchaseReturns';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Vendor  { id: number; print_name: string; }
 interface Product { id: number; name: string; purchase_price: number; purchase_tax_id: number | null; }
@@ -38,6 +39,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
   const [lineRaws,         setLineRaws]         = useState<LineRaw[]>([emptyRaw()]);
   const [saving,           setSaving]           = useState(false);
   const [error,            setError]            = useState('');
+  const [errors,           setErrors]           = useState<Record<string, string>>({});
   const [autoSettle,       setAutoSettle]       = useState(true);
   const [allocations,      setAllocations]      = useState<Record<number, string>>({});
   const [attachments,      setAttachments]      = useState<File[]>([]);
@@ -69,7 +71,8 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
       setReference(full.reference ?? '');
       setSubject(full.subject ?? '');
       setNotes(full.notes ?? '');
-      setDiscPct(String(full.discount ?? 0));
+      const grossAmt = Number(full.gross_amount ?? 0);
+      setDiscPct(grossAmt > 0 ? String((Number(full.discount ?? 0) / grossAmt) * 100) : '0');
       setShippingCharges(String(full.shipping_charges ?? 0));
       const ls = full.lines?.length ? full.lines : [emptyLine()];
       setLines(ls);
@@ -142,13 +145,30 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
   const formatBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
   const fmt      = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!vendorId) e.vendor = 'Vendor is required.';
+    if (!date) e.date = 'Date is required.';
+    const discErr = validatePercent(p2n(discPct), 'Discount'); if (discErr) e.discPct = discErr;
+    const shipErr = validatePositive(p2n(shippingCharges), 'Shipping charges'); if (shipErr) e.shippingCharges = shipErr;
+    const validLines = lines.filter(l => l.product_id || l.description);
+    if (!validLines.length) e.lines = 'At least one product line is required.';
+    lines.forEach((l, i) => {
+      if (!(l.product_id || l.description)) return;
+      const qtyErr = validatePositive(l.quantity, 'Quantity'); if (qtyErr) e[`qty_${i}`] = qtyErr;
+      const priceErr = validatePositive(l.unit_price, 'Unit price'); if (priceErr) e[`price_${i}`] = priceErr;
+      const discPctErr = validatePercent(l.discount_pct, 'Discount %'); if (discPctErr) e[`disc_${i}`] = discPctErr;
+    });
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   async function handleSave(e: React.FormEvent, continueEdit = false) {
     e.preventDefault(); setError('');
-    if (!vendorId) { setError('Vendor is required'); return; }
-    const validLines = lines.filter(l => l.product_id || l.description);
-    if (!validLines.length) { setError('At least one product line is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
+      const validLines = lines.filter(l => l.product_id || l.description);
       const payload = {
         vendor_id: Number(vendorId),
         invoice_id: invoiceId ? Number(invoiceId) : null,
@@ -187,10 +207,11 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
             <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vendor <span className="text-red-500">*</span></label>
-                <select className={inp} value={vendorId} onChange={e => setVendorId(e.target.value)} required>
+                <select className={`${inp} ${errors.vendor ? 'border-red-500' : ''}`} value={vendorId} onChange={e => setVendorId(e.target.value)} required>
                   <option value="">Type to search vendor</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.print_name}</option>)}
                 </select>
+                {errors.vendor && <p className="text-xs text-red-500 mt-1">{errors.vendor}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number <span className="text-red-500">*</span></label>
@@ -207,7 +228,8 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
-                <input type="date" className={inp} value={date} onChange={e => setDate(e.target.value)} required />
+                <input type="date" className={`${inp} ${errors.date ? 'border-red-500' : ''}`} value={date} onChange={e => setDate(e.target.value)} required />
+                {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
@@ -285,7 +307,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                           <input
                             type="text"
                             inputMode="decimal"
-                            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                            className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={raw.qty}
                             onChange={e => {
                               const v = e.target.value;
@@ -302,7 +324,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                           <input
                             type="text"
                             inputMode="decimal"
-                            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                            className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`price_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={raw.price}
                             onChange={e => {
                               const v = e.target.value;
@@ -320,7 +342,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                             <input
                               type="text"
                               inputMode="decimal"
-                              className="flex-1 border border-gray-200 rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                              className={`flex-1 border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`disc_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                               value={raw.disc}
                               onChange={e => {
                                 const v = e.target.value;
@@ -357,6 +379,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                 className="mt-2 text-sm text-green-600 hover:text-green-700 hover:underline font-medium">
                 + Add Line
               </button>
+              {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
             </div>
 
             {/* Comments + Attachments (left) | Totals (right) */}
@@ -409,7 +432,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                     <span className="text-gray-600 font-medium">Discount</span>
                     <div className="flex items-center gap-2">
                       <input type="text" inputMode="decimal"
-                        className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
+                        className={`w-16 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.discPct ? 'border-red-500' : 'border-gray-300'}`}
                         value={discPct}
                         onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setDiscPct(v); }}
                         onBlur={e => { const n = Math.min(100, Math.max(0, p2n(e.target.value))); setDiscPct(String(n)); }}
@@ -417,6 +440,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                       <span className="text-gray-500 text-xs">%</span>
                       <span className="font-mono text-gray-700 w-20 text-right">{fmt(discAmt)}</span>
                     </div>
+                    {errors.discPct && <p className="text-xs text-red-500 mt-1">{errors.discPct}</p>}
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Tax</span>
@@ -424,12 +448,15 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Shipping Charges</span>
-                    <input type="text" inputMode="decimal"
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500"
-                      value={shippingCharges}
-                      onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setShippingCharges(v); }}
-                      onBlur={e => { const n = Math.max(0, p2n(e.target.value)); setShippingCharges(String(n)); }}
-                    />
+                    <div>
+                      <input type="text" inputMode="decimal"
+                        className={`w-28 border rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors.shippingCharges ? 'border-red-500' : 'border-gray-300'}`}
+                        value={shippingCharges}
+                        onChange={e => { const v = e.target.value; if (!/^\d*\.?\d*$/.test(v) && v !== '') return; setShippingCharges(v); }}
+                        onBlur={e => { const n = Math.max(0, p2n(e.target.value)); setShippingCharges(String(n)); }}
+                      />
+                      {errors.shippingCharges && <p className="text-xs text-red-500 mt-1">{errors.shippingCharges}</p>}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Round Off</span>

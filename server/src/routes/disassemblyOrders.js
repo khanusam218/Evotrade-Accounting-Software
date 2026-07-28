@@ -1,12 +1,48 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { getOrCreateSeriesByPrefix } = require('../utils');
 
 async function nextNumber(client) {
+  await getOrCreateSeriesByPrefix(client, 'DS-', 6);
   const { rows } = await client.query(
     "UPDATE number_series SET next_number=next_number+1 WHERE prefix='DS-' RETURNING lpad(next_number::text,padding::int,'0')"
   );
   return 'DS-' + rows[0].lpad;
+}
+
+// A Disassembly Order is the reverse of a Bill of Materials: taking apart
+// `quantity` units of `product_id` should never "recover" more of a component
+// than actually went into assembling it in the first place. If this product
+// has no BOM at all, there's nothing to check against — output stays free-text.
+async function validateAgainstBom(client, product_id, quantity, lines) {
+  const { rows: bomRows } = await client.query(
+    'SELECT * FROM bill_of_materials WHERE product_id=$1 AND is_active=true LIMIT 1', [product_id]
+  );
+  if (!bomRows.length) return null;
+  const bom = bomRows[0];
+  const factor = Number(bom.output_qty) > 0 ? Number(quantity) / Number(bom.output_qty) : 0;
+  const { rows: comps } = await client.query('SELECT * FROM bom_components WHERE bom_id=$1', [bom.id]);
+  const maxByProduct = new Map(comps.map(c => [c.component_product_id, Number(c.quantity) * factor]));
+
+  const relevantIds = lines.map(l => l.product_id).filter(Boolean);
+  const { rows: productRows } = relevantIds.length
+    ? await client.query('SELECT id, name FROM products WHERE id = ANY($1)', [relevantIds])
+    : { rows: [] };
+  const nameById = new Map(productRows.map(p => [p.id, p.name]));
+
+  const errors = [];
+  for (const l of lines) {
+    if (!l.product_id || !l.quantity) continue;
+    const name = nameById.get(l.product_id) || `Product #${l.product_id}`;
+    const max = maxByProduct.get(l.product_id);
+    if (max === undefined) {
+      errors.push(`${name} isn't a component of this product's BOM.`);
+    } else if (Number(l.quantity) > max + 0.0001) {
+      errors.push(`${name}: cannot recover ${l.quantity} — the BOM only used ${max.toFixed(4)} of it for ${quantity} unit(s) of the assembly.`);
+    }
+  }
+  return errors.length ? errors : null;
 }
 
 async function saveLines(client, id, lines) {
@@ -60,6 +96,8 @@ router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const bomErrors = await validateAgainstBom(client, product_id, quantity, lines);
+    if (bomErrors) { await client.query('ROLLBACK'); return res.status(400).json({ error: bomErrors.join(' ') }); }
     const number = await nextNumber(client);
     const { rows } = await client.query(
       'INSERT INTO disassembly_orders (number,date,product_id,warehouse_id,quantity,notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
@@ -77,6 +115,8 @@ router.put('/:id', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const bomErrors = await validateAgainstBom(client, product_id, quantity, lines);
+    if (bomErrors) { await client.query('ROLLBACK'); return res.status(400).json({ error: bomErrors.join(' ') }); }
     const { rows } = await client.query(
       "UPDATE disassembly_orders SET product_id=$1,warehouse_id=$2,date=$3,quantity=$4,notes=$5 WHERE id=$6 AND status='draft' RETURNING *",
       [product_id, warehouse_id || null, date, quantity, notes || null, req.params.id]
@@ -93,6 +133,16 @@ router.post('/:id/complete', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const { rows: draftRows } = await client.query(
+      "SELECT * FROM disassembly_orders WHERE id=$1 AND status='draft' FOR UPDATE", [req.params.id]
+    );
+    if (!draftRows.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Not found or not draft' }); }
+    const { rows: existingLines } = await client.query(
+      'SELECT product_id, quantity FROM disassembly_output_lines WHERE disassembly_id=$1', [req.params.id]
+    );
+    const bomErrors = await validateAgainstBom(client, draftRows[0].product_id, draftRows[0].quantity, existingLines);
+    if (bomErrors) { await client.query('ROLLBACK'); return res.status(400).json({ error: bomErrors.join(' ') }); }
+
     const { rows } = await client.query(
       "UPDATE disassembly_orders SET status='completed' WHERE id=$1 AND status='draft' RETURNING *", [req.params.id]
     );

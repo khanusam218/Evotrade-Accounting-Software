@@ -189,7 +189,6 @@ export default function JournalEntriesPage() {
   });
 
   const totalDebit  = sorted.reduce((s, e) => s + Number(e.total_debit),  0);
-  const totalCredit = sorted.reduce((s, e) => s + Number(e.total_credit), 0);
 
   if (showForm) return (
     <JournalEntryForm

@@ -1,8 +1,10 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
+const { getOrCreateSeries } = require('../utils');
 
 async function nextRINumber(client) {
+  await getOrCreateSeries(client, 'Recurring Invoices', 'RI-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Recurring Invoices'
@@ -12,6 +14,7 @@ async function nextRINumber(client) {
 }
 
 async function nextSINumber(client) {
+  await getOrCreateSeries(client, 'Sales Invoices', 'SI-', 6);
   const r = await client.query(
     `UPDATE number_series SET next_number = next_number + 1
      WHERE name = 'Sales Invoices'
@@ -36,11 +39,21 @@ async function saveLines(client, riId, lines) {
   }
 }
 
-function calcTotals(lines, discount = 0) {
+function calcTotals(lines, discPct = 0, shippingCharges = 0, roundOff = 0) {
   const gross    = lines.reduce((s, l) => s + Number(l.quantity || 1) * Number(l.unit_price || 0) * (1 - Number(l.discount_pct || 0) / 100), 0);
   const taxAmount = lines.reduce((s, l) => s + Number(l.tax_amount || 0), 0);
-  const disc     = Number(discount || 0);
-  return { gross_amount: gross, tax_amount: taxAmount, discount: disc, net_amount: gross - disc + taxAmount };
+  const discAmount = gross * Number(discPct || 0) / 100;
+  const shipping   = Number(shippingCharges || 0);
+  const roundOffAmt = Number(roundOff || 0);
+  return {
+    gross_amount: gross,
+    tax_amount: taxAmount,
+    discount_pct: Number(discPct || 0),
+    discount: discAmount,
+    shipping_charges: shipping,
+    round_off: roundOffAmt,
+    net_amount: gross - discAmount + taxAmount + shipping + roundOffAmt,
+  };
 }
 
 function calcNextExecDate(currentDate, frequency, intervalNum) {
@@ -98,17 +111,18 @@ router.post('/', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { customer_id, reference, notes, frequency, interval_num, start_date, end_date, due_days, discount, lines = [] } = req.body;
+    const { customer_id, reference, notes, frequency, interval_num, start_date, end_date, due_days, discount_pct, shipping_charges, round_off, lines = [] } = req.body;
     if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
     if (!start_date)  return res.status(400).json({ error: 'start_date is required' });
     if (!lines.length) return res.status(400).json({ error: 'At least one line is required' });
-    const totals = calcTotals(lines, discount);
+    const totals = calcTotals(lines, discount_pct, shipping_charges, round_off);
     const number = await nextRINumber(client);
     const { rows } = await client.query(
-      `INSERT INTO recurring_invoices (number, customer_id, reference, notes, frequency, interval_num, start_date, end_date, next_exec_date, due_days, gross_amount, tax_amount, discount, net_amount, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$7,$9,$10,$11,$12,$13,'active') RETURNING *`,
+      `INSERT INTO recurring_invoices (number, customer_id, reference, notes, frequency, interval_num, start_date, end_date, next_exec_date, due_days, gross_amount, tax_amount, discount_pct, discount, shipping_charges, round_off, net_amount, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$7,$9,$10,$11,$12,$13,$14,$15,$16,'active') RETURNING *`,
       [number, customer_id, reference || null, notes || null, frequency || 'monthly', Number(interval_num) || 1,
-       start_date, end_date || null, Number(due_days) || 30, totals.gross_amount, totals.tax_amount, totals.discount, totals.net_amount]
+       start_date, end_date || null, Number(due_days) || 30, totals.gross_amount, totals.tax_amount, totals.discount_pct,
+       totals.discount, totals.shipping_charges, totals.round_off, totals.net_amount]
     );
     await saveLines(client, rows[0].id, lines);
     await client.query('COMMIT');
@@ -127,15 +141,17 @@ router.put('/:id', async (req, res) => {
     const { rows: existing } = await client.query('SELECT * FROM recurring_invoices WHERE id=$1', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
     if (existing[0].status === 'cancelled') return res.status(400).json({ error: 'Cannot edit cancelled recurring invoice' });
-    const { customer_id, reference, notes, frequency, interval_num, start_date, end_date, due_days, discount, lines = [] } = req.body;
+    const { customer_id, reference, notes, frequency, interval_num, start_date, end_date, due_days, discount_pct, shipping_charges, round_off, lines = [] } = req.body;
     if (!lines.length) return res.status(400).json({ error: 'At least one line is required' });
-    const totals = calcTotals(lines, discount);
+    const totals = calcTotals(lines, discount_pct, shipping_charges, round_off);
     const { rows } = await client.query(
       `UPDATE recurring_invoices SET customer_id=$1, reference=$2, notes=$3, frequency=$4, interval_num=$5,
-         start_date=$6, end_date=$7, due_days=$8, gross_amount=$9, tax_amount=$10, discount=$11, net_amount=$12
-       WHERE id=$13 RETURNING *`,
+         start_date=$6, end_date=$7, due_days=$8, gross_amount=$9, tax_amount=$10, discount_pct=$11, discount=$12,
+         shipping_charges=$13, round_off=$14, net_amount=$15
+       WHERE id=$16 RETURNING *`,
       [customer_id, reference || null, notes || null, frequency || 'monthly', Number(interval_num) || 1,
-       start_date, end_date || null, Number(due_days) || 30, totals.gross_amount, totals.tax_amount, totals.discount, totals.net_amount, req.params.id]
+       start_date, end_date || null, Number(due_days) || 30, totals.gross_amount, totals.tax_amount, totals.discount_pct,
+       totals.discount, totals.shipping_charges, totals.round_off, totals.net_amount, req.params.id]
     );
     await saveLines(client, req.params.id, lines);
     await client.query('COMMIT');
@@ -198,9 +214,10 @@ router.post('/:id/execute', async (req, res) => {
     const dueDate  = new Date(Date.now() + Number(ri.due_days) * 86400000).toISOString().slice(0, 10);
 
     const { rows: [inv] } = await client.query(
-      `INSERT INTO sales_invoices (number, date, due_date, customer_id, reference, notes, gross_amount, tax_amount, discount, net_amount, paid_amount, balance_amount, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$10,'draft') RETURNING *`,
-      [siNumber, invDate, dueDate, ri.customer_id, ri.reference, ri.notes, ri.gross_amount, ri.tax_amount, ri.discount, ri.net_amount]
+      `INSERT INTO sales_invoices (number, date, due_date, customer_id, reference, notes, gross_amount, tax_amount, discount_pct, discount, shipping_charges, round_off, net_amount, paid_amount, balance_amount, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,0,$13,'draft') RETURNING *`,
+      [siNumber, invDate, dueDate, ri.customer_id, ri.reference, ri.notes, ri.gross_amount, ri.tax_amount,
+       ri.discount_pct, ri.discount, ri.shipping_charges, ri.round_off, ri.net_amount]
     );
     for (const l of riLines) {
       await client.query(
@@ -268,9 +285,10 @@ async function runDueRecurringInvoices() {
           const invDate  = new Date().toISOString().slice(0, 10);
           const dueDate  = new Date(Date.now() + Number(ri.due_days) * 86400000).toISOString().slice(0, 10);
           const { rows: [inv] } = await executeClient.query(
-            `INSERT INTO sales_invoices (number, date, due_date, customer_id, reference, notes, gross_amount, tax_amount, discount, net_amount, paid_amount, balance_amount, status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$10,'draft') RETURNING id`,
-            [siNumber, invDate, dueDate, ri.customer_id, ri.reference, ri.notes, ri.gross_amount, ri.tax_amount, ri.discount, ri.net_amount]
+            `INSERT INTO sales_invoices (number, date, due_date, customer_id, reference, notes, gross_amount, tax_amount, discount_pct, discount, shipping_charges, round_off, net_amount, paid_amount, balance_amount, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,0,$13,'draft') RETURNING id`,
+            [siNumber, invDate, dueDate, ri.customer_id, ri.reference, ri.notes, ri.gross_amount, ri.tax_amount,
+             ri.discount_pct, ri.discount, ri.shipping_charges, ri.round_off, ri.net_amount]
           );
           for (const l of riLines) {
             await executeClient.query(

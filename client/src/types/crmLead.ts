@@ -62,4 +62,5 @@ export interface CrmLead {
   tag: string | null;
   created_at?: string;
   activities?: CrmActivity[];
+  converted_to_customer_id?: number | null;
 }

@@ -24,6 +24,13 @@ export interface MakePaymentInstrument {
   amount: number;
 }
 
+export interface MakePaymentAllocation {
+  id?: number;
+  invoice_id: number;
+  invoice_number?: string;
+  amount: number;
+}
+
 export interface MakePayment {
   id: number;
   number: string;
@@ -37,4 +44,5 @@ export interface MakePayment {
   status: MPStatus;
   created_at?: string;
   instruments?: MakePaymentInstrument[];
+  allocations?: MakePaymentAllocation[];
 }

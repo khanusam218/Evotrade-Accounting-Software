@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SalesReturn, SalesReturnLine } from '../types/salesReturn';
 import { SR_STATUS_LABELS } from '../types/salesReturn';
 import { createSalesReturn, updateSalesReturn, getSalesReturn } from '../api/salesReturns';
+import { validatePercent, validatePositive } from '../utils/validators';
 
 interface Customer    { id: number; print_name: string; }
 interface Product     { id: number; name: string; sale_price: number; sale_tax_id: number | null; }
@@ -48,6 +49,8 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
   const [lines,              setLines]              = useState<SalesReturnLine[]>([emptyLine()]);
   const [saving,          setSaving]          = useState(false);
   const [error,           setError]           = useState('');
+  const [errors,          setErrors]          = useState<Record<string, string>>({});
+  const [lineErrors,      setLineErrors]      = useState<Record<number, Partial<Record<'quantity' | 'unit_price' | 'discount_pct', string>>>>({});
 
   // Quickly Add Products / Scan modal
   const [showScanModal, setShowScanModal] = useState(false);
@@ -71,7 +74,8 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
       setDate(full.date?.slice(0, 10) ?? '');
       setReference(full.reference ?? '');
       setSubject(full.notes ?? '');
-      setDiscountPct(String(full.discount ?? 0));
+      const grossAmt = Number(full.gross_amount ?? 0);
+      setDiscountPct(grossAmt > 0 ? String((Number(full.discount ?? 0) / grossAmt) * 100) : '0');
       setLines(full.lines?.length ? full.lines : [emptyLine()]);
     });
   }, [ret]);
@@ -134,9 +138,36 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
   const net      = gross - discAmt + taxTotal + shipping + roundOff_;
   const balance  = net - Number(refunded || 0);
 
+  function validate() {
+    const e: Record<string, string> = {};
+    if (!customerId) e.customerId = 'Customer is required.';
+    if (!date) e.date = 'Date is required.';
+
+    const discErr = validatePercent(discPct, 'Discount'); if (discErr) e.discountPct = discErr;
+    const shipErr = validatePositive(shipping, 'Shipping charges'); if (shipErr) e.shippingCharges = shipErr;
+    const refundErr = validatePositive(Number(refunded || 0), 'Refund amount');
+    if (refundErr) e.refunded = refundErr;
+    else if (Number(refunded || 0) > net) e.refunded = 'Refund amount cannot exceed the net amount.';
+
+    const validLines = lines.filter(l => l.product_id || l.quantity > 0);
+    if (validLines.length === 0) e.lines = 'At least one line item is required.';
+
+    const le: typeof lineErrors = {};
+    lines.forEach((l, i) => {
+      const li: Partial<Record<'quantity' | 'unit_price' | 'discount_pct', string>> = {};
+      const qErr = validatePositive(l.quantity, 'Quantity'); if (qErr) li.quantity = qErr;
+      const pErr = validatePositive(l.unit_price, 'Unit price'); if (pErr) li.unit_price = pErr;
+      const dErr = validatePercent(l.discount_pct, 'Discount'); if (dErr) li.discount_pct = dErr;
+      if (Object.keys(li).length) le[i] = li;
+    });
+    setLineErrors(le);
+    setErrors(e);
+    return Object.keys(e).length === 0 && Object.keys(le).length === 0;
+  }
+
   async function handleSave() {
     setError('');
-    if (!customerId) { setError('Customer is required'); return; }
+    if (!validate()) return;
     setSaving(true);
     try {
       const payload = {
@@ -188,12 +219,13 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                 Customer <span className="text-red-500">*</span>
               </label>
               <select
-                className="w-full border-2 border-red-400 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-400"
+                className={`w-full border-2 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-400 ${errors.customerId ? 'border-red-500' : 'border-red-400'}`}
                 value={customerId} onChange={e => setCustomerId(e.target.value)}
               >
                 <option value="">Type to search customer…</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.print_name}</option>)}
               </select>
+              {errors.customerId && <p className="text-xs text-red-500 mt-1">{errors.customerId}</p>}
             </div>
             <div className="flex-[1.5]">
               <label className="block text-xs font-semibold text-gray-600 mb-1">
@@ -210,8 +242,9 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
               <label className="block text-xs font-semibold text-gray-600 mb-1">
                 Date <span className="text-red-500">*</span>
               </label>
-              <input type="date" className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              <input type="date" className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.date ? 'border-red-500' : 'border-gray-300'}`}
                 value={date} onChange={e => setDate(e.target.value)} />
+              {errors.date && <p className="text-xs text-red-500 mt-1">{errors.date}</p>}
             </div>
             <div className="flex-1">
               <label className="block text-xs font-semibold text-gray-600 mb-1">Reference</label>
@@ -301,20 +334,23 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                     <td className="border border-gray-300 px-2 py-1.5">
                       <input type="number" min="0" step="any" value={l.quantity}
                         onChange={e => updateLine(i, { quantity: Number(e.target.value) })}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        className={`w-full text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`} />
+                      {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>
                     <td className="border border-gray-300 px-2 py-1.5">
                       <input type="number" min="0" step="any" value={l.unit_price}
                         onChange={e => updateLine(i, { unit_price: Number(e.target.value) })}
-                        className="w-full text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        className={`w-full text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.unit_price ? 'border-red-500' : 'border-gray-300'}`} />
+                      {lineErrors[i]?.unit_price && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].unit_price}</p>}
                     </td>
                     <td className="border border-gray-300 px-2 py-1.5">
                       <div className="flex items-center gap-1">
                         <input type="number" min="0" max="100" step="any" value={l.discount_pct}
                           onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })}
-                          className="flex-1 text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                          className={`flex-1 text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.discount_pct ? 'border-red-500' : 'border-gray-300'}`} />
                         <button type="button" className="border border-gray-300 rounded px-1.5 py-0.5 text-xs text-gray-600 bg-gray-50 hover:bg-gray-100 whitespace-nowrap">% ▼</button>
                       </div>
+                      {lineErrors[i]?.discount_pct && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].discount_pct}</p>}
                     </td>
                     <td className="border border-gray-300 px-2 py-1.5">
                       <input readOnly value={lineAmount(l).toFixed(2)}
@@ -334,6 +370,7 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
             </table>
             <button type="button" onClick={() => setLines(prev => [...prev, emptyLine()])}
               className="mt-2 text-xs text-blue-600 hover:underline">+ Add Line</button>
+            {errors.lines && <p className="text-xs text-red-500 mt-1">{errors.lines}</p>}
           </div>
 
           {/* Comments + Summary */}
@@ -354,12 +391,13 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                 <div className="flex items-center gap-1">
                   <input type="number" min="0" max="100" step="any" value={discountPct}
                     onChange={e => setDiscountPct(e.target.value)}
-                    className="w-14 text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                    className={`w-14 text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.discountPct ? 'border-red-500' : 'border-gray-300'}`} />
                   <span className="text-xs text-gray-500 border border-gray-300 rounded px-1.5 py-0.5 bg-gray-50">%</span>
                   <input readOnly value={discAmt.toFixed(2)}
                     className="w-20 text-right text-xs border border-gray-300 rounded px-1 py-0.5 bg-gray-50 focus:outline-none" />
                 </div>
               </div>
+              {errors.discountPct && <p className="text-xs text-red-500 text-right -mt-1">{errors.discountPct}</p>}
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Tax</span>
                 <span className="font-mono text-gray-800">{taxTotal.toFixed(2)}</span>
@@ -368,8 +406,9 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                 <span className="text-gray-600 shrink-0">Shipping Charges</span>
                 <input type="number" min="0" step="any" value={shippingCharges}
                   onChange={e => setShippingCharges(e.target.value)}
-                  className="w-24 text-right text-xs border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  className={`w-24 text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.shippingCharges ? 'border-red-500' : 'border-gray-300'}`} />
               </div>
+              {errors.shippingCharges && <p className="text-xs text-red-500 text-right -mt-1">{errors.shippingCharges}</p>}
               <div className="flex justify-between items-center gap-2">
                 <span className="text-gray-600 shrink-0">Round Off</span>
                 <input type="number" step="any" value={roundOff}
@@ -398,10 +437,11 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                     placeholder="Reference" value={payReference} disabled={!bankAccountId}
                     onChange={e => setPayReference(e.target.value)} />
                   <input type="number" min="0" step="any"
-                    className="border border-gray-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    className={`border rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.refunded ? 'border-red-500' : 'border-gray-300'}`}
                     value={refunded} disabled={!bankAccountId}
                     onChange={e => setRefunded(e.target.value)} />
                 </div>
+                {errors.refunded && <p className="text-xs text-red-500 text-right">{errors.refunded}</p>}
                 <div className="flex justify-between items-center border-t pt-2">
                   <span className="text-gray-700 text-xs font-medium">Balance (PKR)</span>
                   <span className={`font-mono text-xs font-medium ${balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>{balance.toFixed(2)}</span>

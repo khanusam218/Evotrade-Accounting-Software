@@ -104,8 +104,8 @@ export default function PurchaseOrdersPage() {
 
   const sorted = [...visible].sort((a, b) => {
     if (!sortDir || !sortKey) return 0;
-    const av = (a as Record<string, unknown>)[sortKey] ?? '';
-    const bv = (b as Record<string, unknown>)[sortKey] ?? '';
+    const av = (a as unknown as Record<string, unknown>)[sortKey] ?? '';
+    const bv = (b as unknown as Record<string, unknown>)[sortKey] ?? '';
     return (sortDir === 'asc' ? 1 : -1) * String(av).localeCompare(String(bv), undefined, { numeric: true });
   });
 
@@ -250,7 +250,7 @@ export default function PurchaseOrdersPage() {
                   <td className="px-3 py-2 text-xs text-gray-500">{r.reference ?? '—'}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{r.expected_date?.slice(0,10) ?? '—'}</td>
                   <td className="px-3 py-2 text-right font-mono text-xs font-semibold">
-                    PKR {Number((r as Record<string, unknown>).gross_amount ?? r.net_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    PKR {Number((r as unknown as Record<string, unknown>).gross_amount ?? r.net_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs font-semibold">
                     PKR {Number(r.net_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
