@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSalesOrders, getSalesOrder } from '../api/salesOrders';
 import type { SalesOrder } from '../types/salesOrder';
-import { getOpenSession, openSession, closeSession, createTransaction, createCashMovement } from '../api/pos';
-import type { POSSession, POSTransactionLine } from '../types/pos';
+import { getOpenSession, openSession, closeSession, createTransaction, createCashMovement, getTransactions, getTransaction, createReturn } from '../api/pos';
+import type { POSSession, POSTransaction, POSTransactionLine } from '../types/pos';
 
 interface Product {
   id: number;
@@ -402,7 +402,7 @@ interface CheckoutSummaryModalProps {
   cartTax: number;
   cartTotal: number;
   onClose: () => void;
-  onSaleConfirmed?: () => void;
+  onSaleConfirmed?: (tx: POSTransaction) => void;
   onSessionClosed?: () => void;
   buildLines?: () => POSTransactionLine[];
 }
@@ -433,7 +433,7 @@ function CheckoutSummaryModal({
       const paymentMode = Number(fields.cardAmount) > 0 ? 'card' : Number(fields.bankTransfer) > 0 ? 'bank' : Number(fields.creditSale) > 0 ? 'credit' : 'cash';
       setSaving(true);
       try {
-        await createTransaction({
+        const tx = await createTransaction({
           session_id: sessionId,
           subtotal: cartSubtotal,
           tax_total: cartTax,
@@ -444,7 +444,7 @@ function CheckoutSummaryModal({
           payment_mode: paymentMode,
           lines: buildLines(),
         });
-        onSaleConfirmed?.();
+        onSaleConfirmed?.(tx);
         onClose();
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Checkout failed');
@@ -525,6 +525,178 @@ function CheckoutSummaryModal({
   );
 }
 
+// ── Sale Return Panel ──────────────────────────────────────────────────────────
+// Looks up the original completed sale by invoice number, lets the cashier
+// enter how many of each line are being returned, and posts a linked return
+// transaction (status='return') that reverses stock for the returned qty.
+function SaleReturnPanel({ sessionId }: { sessionId: number | null }) {
+  const [searchNum,   setSearchNum]   = useState('');
+  const [searching,   setSearching]   = useState(false);
+  const [original,    setOriginal]    = useState<POSTransaction | null>(null);
+  const [returnQtys,  setReturnQtys]  = useState<Record<number, number>>({});
+  const [paymentMode, setPaymentMode] = useState('cash');
+  const [processing,  setProcessing]  = useState(false);
+  const [error,       setError]       = useState('');
+  const [success,     setSuccess]     = useState('');
+
+  function lineNet(l: POSTransactionLine, qty: number) {
+    return Number(l.unit_price) * qty * (1 - Number(l.discount_pct) / 100);
+  }
+  function lineTaxRate(l: POSTransactionLine) {
+    const origNet = lineNet(l, Number(l.quantity));
+    return origNet > 0 ? Number(l.tax_amount) / origNet : 0;
+  }
+
+  async function search() {
+    if (!searchNum.trim()) return;
+    setSearching(true); setError(''); setSuccess(''); setOriginal(null); setReturnQtys({});
+    try {
+      const results = await getTransactions({ search: searchNum.trim() });
+      const match = results.find(t => t.number.toLowerCase() === searchNum.trim().toLowerCase()) || results[0];
+      if (!match) { setError('No sale found with that invoice number.'); return; }
+      if (match.status !== 'completed') { setError(`Sale ${match.number} is ${match.status}, not returnable.`); return; }
+      const full = await getTransaction(match.id);
+      setOriginal(full);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Search failed');
+    } finally { setSearching(false); }
+  }
+
+  function setQty(lineId: number, qty: number, maxQty: number) {
+    setReturnQtys(prev => ({ ...prev, [lineId]: Math.max(0, Math.min(maxQty, qty)) }));
+  }
+
+  const returnLines = (original?.lines || [])
+    .map(l => ({ line: l, qty: returnQtys[l.id!] || 0 }))
+    .filter(x => x.qty > 0);
+  const subtotal = returnLines.reduce((s, x) => s + lineNet(x.line, x.qty), 0);
+  const taxTotal = returnLines.reduce((s, x) => s + lineNet(x.line, x.qty) * lineTaxRate(x.line), 0);
+  const total    = subtotal + taxTotal;
+
+  async function processReturn() {
+    if (!original) return;
+    if (!sessionId) { setError('No open POS session — check in to a counter first.'); return; }
+    if (returnLines.length === 0) { setError('Enter a return quantity for at least one item.'); return; }
+    setProcessing(true); setError('');
+    try {
+      const orig = original;
+      await createReturn(orig.id, {
+        session_id: sessionId,
+        payment_mode: paymentMode,
+        lines: returnLines.map(x => ({
+          product_id: x.line.product_id,
+          description: x.line.description,
+          quantity: x.qty,
+          unit_price: Number(x.line.unit_price),
+          discount_pct: Number(x.line.discount_pct),
+          tax_id: x.line.tax_id,
+          tax_amount: lineNet(x.line, x.qty) * lineTaxRate(x.line),
+          amount: lineNet(x.line, x.qty),
+        })),
+      });
+      setSuccess(`Return processed against ${orig.number}.`);
+      setOriginal(null); setReturnQtys({}); setSearchNum('');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Return failed');
+    } finally { setProcessing(false); }
+  }
+
+  return (
+    <div className="flex-1 flex flex-col bg-gray-50 p-6 overflow-y-auto">
+      <div className="max-w-3xl w-full mx-auto">
+        <h2 className="text-base font-bold text-gray-900 mb-1">Sale Return</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Look up the original sale by invoice number, then enter how many of each item are being returned.
+        </p>
+
+        <div className="flex gap-2 mb-4">
+          <input
+            className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+            placeholder="Invoice number (e.g. POS-000012)"
+            value={searchNum}
+            onChange={e => setSearchNum(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && search()}
+          />
+          <button onClick={search} disabled={searching}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-semibold disabled:opacity-50">
+            {searching ? 'Searching…' : 'Find Sale'}
+          </button>
+        </div>
+
+        {error && <div className="mb-4 rounded bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{error}</div>}
+        {success && <div className="mb-4 rounded bg-green-50 border border-green-200 px-4 py-2 text-sm text-green-700">{success}</div>}
+
+        {original && (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+              <div>
+                <span className="text-sm font-semibold text-gray-800">{original.number}</span>
+                <span className="text-xs text-gray-500 ml-2">{original.date?.slice(0, 10)}</span>
+                {original.customer_name && <span className="text-xs text-gray-500 ml-2">· {original.customer_name}</span>}
+              </div>
+              <span className="text-sm font-semibold text-gray-700">Sold Total: {Number(original.total).toFixed(2)}</span>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-gray-600">Item</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600 w-20">Sold Qty</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Remaining</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Price</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600 w-28">Return Qty</th>
+                  <th className="px-3 py-2 text-right font-medium text-gray-600 w-24">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(original.lines || []).map(l => {
+                  const remaining = Number(l.quantity) - Number(l.returned_qty || 0);
+                  return (
+                  <tr key={l.id} className="border-b hover:bg-gray-50">
+                    <td className="px-3 py-2 text-xs text-gray-700">{l.description}</td>
+                    <td className="px-3 py-2 text-right text-xs">{l.quantity}</td>
+                    <td className={`px-3 py-2 text-right text-xs ${remaining <= 0 ? 'text-gray-400' : 'text-gray-700'}`}>{remaining}</td>
+                    <td className="px-3 py-2 text-right text-xs">{Number(l.unit_price).toFixed(2)}</td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min={0} max={remaining} step={1} disabled={remaining <= 0}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        value={returnQtys[l.id!] || ''} placeholder="0"
+                        onChange={e => setQty(l.id!, Math.round(Number(e.target.value)) || 0, remaining)} />
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs font-mono">
+                      {lineNet(l, returnQtys[l.id!] || 0).toFixed(2)}
+                    </td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Refund via</label>
+                <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
+                  className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500">
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="bank">Bank</option>
+                  <option value="credit">Store Credit</option>
+                </select>
+              </div>
+              <div className="text-right text-sm">
+                <div className="text-gray-600">Tax: <span className="font-mono">{taxTotal.toFixed(2)}</span></div>
+                <div className="font-bold text-gray-900">Return Total: <span className="text-red-600">{total.toFixed(2)}</span></div>
+              </div>
+              <button onClick={processReturn} disabled={processing || returnLines.length === 0}
+                className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded text-sm font-semibold disabled:opacity-50">
+                {processing ? 'PROCESSING…' : 'PROCESS RETURN'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main POS Page ──────────────────────────────────────────────────────────────
 export default function POSPage() {
   const [counter,         setCounter]         = useState<POSCounter | null>(null);
@@ -532,7 +704,18 @@ export default function POSPage() {
   const [checkingIn,      setCheckingIn]      = useState(false);
   const [checkInError,    setCheckInError]    = useState('');
   const [activeTab,       setActiveTab]       = useState<InvoiceTab>('invoice1');
-  const [cartItems,       setCartItems]       = useState<CartItem[]>([]);
+  // Invoice 1 and Invoice 2 hold independent carts, so the cashier can park a
+  // sale on one tab and start another without losing it. Sale Return has its
+  // own separate state (SaleReturnPanel) since it isn't a product cart at all.
+  const [carts, setCarts] = useState<{ invoice1: CartItem[]; invoice2: CartItem[] }>({ invoice1: [], invoice2: [] });
+  const activeCartTab = activeTab === 'invoice2' ? 'invoice2' : 'invoice1';
+  const cartItems = carts[activeCartTab];
+  function setCartItems(updater: CartItem[] | ((prev: CartItem[]) => CartItem[])) {
+    setCarts(prev => ({
+      ...prev,
+      [activeCartTab]: typeof updater === 'function' ? (updater as (p: CartItem[]) => CartItem[])(prev[activeCartTab]) : updater,
+    }));
+  }
   const [products,        setProducts]        = useState<Product[]>([]);
   const [taxes,           setTaxes]           = useState<Tax[]>([]);
   const [searchProduct,   setSearchProduct]   = useState('');
@@ -544,6 +727,7 @@ export default function POSPage() {
   const [showFundsTransfer, setShowFundsTransfer] = useState(false);
   const [showCheckout,    setShowCheckout]    = useState(false);
   const [checkoutMode,    setCheckoutMode]    = useState<'sale' | 'closeout'>('sale');
+  const [lastReceipt,     setLastReceipt]     = useState<POSTransaction | null>(null);
   const [showShortcuts,   setShowShortcuts]   = useState(false);
   const [orderResults,    setOrderResults]    = useState<SalesOrder[]>([]);
   const [showOrderResults, setShowOrderResults] = useState(false);
@@ -742,7 +926,7 @@ export default function POSPage() {
         {TAB_LABELS.map(t => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => { setActiveTab(t.key); setSelectedItemIdx(null); setNumpadBuffer(''); }}
             className={`px-5 py-1.5 text-sm font-medium rounded border transition-colors ${
               activeTab === t.key
                 ? 'bg-green-500 text-white border-green-500'
@@ -806,6 +990,18 @@ export default function POSPage() {
         </div>
       </div>
 
+      {/* Last completed sale — the app has no receipt printout, so this is
+          the only place the cashier can see what invoice number was just created. */}
+      {lastReceipt && (
+        <div className="shrink-0 bg-green-50 border-t border-green-200 px-4 py-2 flex items-center justify-between">
+          <span className="text-sm text-green-800">
+            Sale completed — <span className="font-mono font-semibold">{lastReceipt.number}</span>
+            {' '}(Total: {Number(lastReceipt.total).toFixed(2)})
+          </span>
+          <button onClick={() => setLastReceipt(null)} className="text-green-600 hover:text-green-800 text-lg leading-none">&times;</button>
+        </div>
+      )}
+
       {/* Modals */}
       {showFundsTransfer && (
         <FundsTransferModal
@@ -826,8 +1022,9 @@ export default function POSPage() {
           cartTotal={total}
           buildLines={buildTransactionLines}
           onClose={() => setShowCheckout(false)}
-          onSaleConfirmed={() => {
+          onSaleConfirmed={(tx) => {
             setCartItems([]); setSelectedItemIdx(null); setNumpadBuffer('');
+            setLastReceipt(tx);
           }}
           onSessionClosed={() => { setCounter(null); setSession(null); }}
         />
@@ -861,7 +1058,10 @@ export default function POSPage() {
 
       {/* ── Body ─────────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
-
+       {activeTab === 'saleReturn' ? (
+        <SaleReturnPanel sessionId={session?.id ?? null} />
+       ) : (
+        <>
         {/* ── LEFT PANEL: cart + summary + numpad ─────────────────────────────── */}
         <div className="flex flex-col border-r bg-white" style={{ width: '42%' }}>
 
@@ -1074,6 +1274,8 @@ export default function POSPage() {
             )}
           </div>
         </div>
+        </>
+       )}
       </div>
     </div>
   );

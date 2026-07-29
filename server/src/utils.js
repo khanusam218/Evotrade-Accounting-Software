@@ -41,4 +41,26 @@ async function getOrCreateSeriesByPrefix(client, prefix, defaultPadding = 6) {
   return created[0];
 }
 
-module.exports = { round2, getOrCreateSeries, getOrCreateSeriesByPrefix };
+// Formats and consumes the next number for a series, but first checks the
+// actual documents already in `table` — not just the series counter — and
+// takes whichever is higher. Without this, a company whose documents were
+// migrated/imported (so number_series never tracked them) gets a fresh
+// counter starting at 1, colliding with pre-existing document numbers the
+// very first time it creates something new. `table`/`column` are always
+// hardcoded literals passed by route code, never request input, so string
+// interpolation here is safe (no parameterized-identifier support in pg).
+async function safeNextNumber(client, series, updateWhereCol, updateWhereVal, table, column) {
+  const { rows: maxRows } = await client.query(
+    `SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(${column}, '[^0-9]', '', 'g') AS INTEGER)), 0) AS max_num
+     FROM ${table} WHERE ${column} ~ ('^' || $1 || '[0-9]+$')`,
+    [series.prefix]
+  );
+  const useNum = Math.max(Number(series.next_number), Number(maxRows[0].max_num) + 1);
+  await client.query(
+    `UPDATE number_series SET next_number = $1 WHERE ${updateWhereCol} = $2`,
+    [useNum + 1, updateWhereVal]
+  );
+  return `${series.prefix}${String(useNum).padStart(Number(series.padding), '0')}`;
+}
+
+module.exports = { round2, getOrCreateSeries, getOrCreateSeriesByPrefix, safeNextNumber };

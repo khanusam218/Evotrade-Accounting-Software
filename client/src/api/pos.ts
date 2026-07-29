@@ -1,5 +1,5 @@
 import { apiFetch, parseJsonOrThrow } from './apiFetch';
-import type { POSCounter, POSSession, POSTransaction } from '../types/pos';
+import type { POSCounter, POSSession, POSTransaction, POSTransactionLine } from '../types/pos';
 
 const BASE = '/api/pos';
 const CB   = '/api/pos-counters';
@@ -35,6 +35,9 @@ export const getTransaction    = (id: number): Promise<POSTransaction>    => api
 export const createTransaction = (d: Partial<POSTransaction>): Promise<POSTransaction> => post<POSTransaction>(`${BASE}/transactions`, d);
 export const voidTransaction   = (id: number): Promise<POSTransaction>    =>
   apiFetch(`${BASE}/transactions/${id}/void`, { method: 'POST' }).then(j<POSTransaction>);
+export const createReturn = (originalId: number, d: {
+  session_id: number; payment_mode?: string; notes?: string; lines: POSTransactionLine[];
+}): Promise<POSTransaction> => post<POSTransaction>(`${BASE}/transactions/${originalId}/return`, d);
 
 // ─── Cash movements (Cash In / Cash Out) ─────────────────────────────────────
 export interface POSCashMovement {

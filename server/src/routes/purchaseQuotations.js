@@ -1,16 +1,11 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { getOrCreateSeries } = require('../utils');
+const { getOrCreateSeries, safeNextNumber } = require('../utils');
 
 async function nextNumber(client) {
-  await getOrCreateSeries(client, 'Purchase Quotations', 'RFQ-', 6);
-  const r = await client.query(
-    `UPDATE number_series SET next_number = next_number + 1
-     WHERE name = 'Purchase Quotations'
-     RETURNING prefix || LPAD((next_number - 1)::text, padding, '0') AS num`
-  );
-  return r.rows[0].num;
+  const series = await getOrCreateSeries(client, 'Purchase Quotations', 'RFQ-', 6);
+  return safeNextNumber(client, series, 'name', 'Purchase Quotations', 'purchase_quotations', 'number');
 }
 
 async function saveLines(client, quotationId, lines) {

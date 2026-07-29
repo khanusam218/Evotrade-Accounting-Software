@@ -4,6 +4,7 @@ import type { PurchaseOrder, POStatus } from '../types/purchaseOrder';
 import { PO_STATUS_COLORS, PO_STATUS_LABELS } from '../types/purchaseOrder';
 import { getPurchaseOrders, confirmPurchaseOrder, receivePurchaseOrder, cancelPurchaseOrder, deletePurchaseOrder } from '../api/purchaseOrders';
 import PurchaseOrderForm from '../components/PurchaseOrderForm';
+import PurchaseInvoiceForm from '../components/PurchaseInvoiceForm';
 
 type SortDir = 'asc' | 'desc' | null;
 type SortKey = keyof PurchaseOrder | '';
@@ -51,6 +52,8 @@ export default function PurchaseOrdersPage() {
   const [vendors,     setVendors]     = useState<Vendor[]>([]);
   const [showForm,    setShowForm]    = useState(false);
   const [editing,     setEditing]     = useState<PurchaseOrder | null>(null);
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [invoiceFrom,     setInvoiceFrom]     = useState<PurchaseOrder | null>(null);
   const [selected,    setSelected]    = useState<Set<number>>(new Set());
   const [sortKey,     setSortKey]     = useState<SortKey>('date');
   const [sortDir,     setSortDir]     = useState<SortDir>('desc');
@@ -151,6 +154,15 @@ export default function PurchaseOrdersPage() {
 
   if (showForm) return (
         <PurchaseOrderForm order={editing} onClose={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(applied); }} />
+  );
+
+  if (showInvoiceForm && invoiceFrom) return (
+    <PurchaseInvoiceForm
+      invoice={null}
+      fromOrder={invoiceFrom}
+      onClose={() => { setShowInvoiceForm(false); setInvoiceFrom(null); }}
+      onSaved={() => { setShowInvoiceForm(false); setInvoiceFrom(null); load(applied); }}
+    />
   );
 
   return (
@@ -271,6 +283,12 @@ export default function PurchaseOrdersPage() {
                         <button onClick={() => act(() => receivePurchaseOrder(r.id), 'Mark as received?')} className="text-xs px-2 py-0.5 rounded bg-cyan-100 text-cyan-700 hover:bg-cyan-200 border border-cyan-200">Receive</button>
                         <button onClick={() => act(() => cancelPurchaseOrder(r.id), 'Cancel this order?')} className="text-xs px-2 py-0.5 text-red-500 hover:underline">Cancel</button>
                       </>}
+                      {(r.status === 'confirmed' || r.status === 'received') && (
+                        <button onClick={() => { setInvoiceFrom(r); setShowInvoiceForm(true); }}
+                          className="rounded px-2 py-0.5 text-xs font-medium text-indigo-600 border border-indigo-200 hover:bg-indigo-50">
+                          Invoice
+                        </button>
+                      )}
                       {r.status === 'received' && <button onClick={() => act(() => cancelPurchaseOrder(r.id), 'Cancel this order?')} className="text-xs px-2 py-0.5 text-red-500 hover:underline">Cancel</button>}
                       {(r.status === 'invoiced' || r.status === 'cancelled') && <span className="text-xs text-gray-400">—</span>}
                     </div>

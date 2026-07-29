@@ -102,7 +102,7 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
       setDiscount(String(full.discount_pct ?? 0));
       setShippingChgs(String(full.shipping_charges ?? 0));
       setRoundOff(String(full.round_off ?? 0));
-      setLines(full.lines?.length ? full.lines : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()]);
     });
   }, [ri]);
 
@@ -406,8 +406,8 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
               <thead>
                 <tr className="bg-gray-100">
                   <th className="text-left px-3 py-2 font-medium text-gray-600 border-b">Product</th>
-                  <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-24">Quantity</th>
-                  <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-28">Price</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-28">Quantity</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-32">Price</th>
                   <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-36">Disc.</th>
                   <th className="text-right px-3 py-2 font-medium text-gray-600 border-b w-28">Amount</th>
                   <th className="px-3 py-2 border-b w-16 text-center">Action</th>
@@ -426,29 +426,29 @@ export default function RecurringInvoiceForm({ ri, onClose, onSaved }: Props) {
                         {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </td>
-                    <td className="px-3 py-1.5">
+                    <td className="px-1 py-1.5">
                       <input
-                        type="number" min="0" step="any"
-                        className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-200'}`}
+                        type="number" min="0" step="1"
+                        className={`w-full border rounded px-1 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-200'}`}
                         value={l.quantity}
-                        onChange={e => updateLine(i, { quantity: Number(e.target.value) })}
+                        onChange={e => updateLine(i, { quantity: Math.round(Number(e.target.value)) })}
                       />
                       {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>
-                    <td className="px-3 py-1.5">
+                    <td className="px-1 py-1.5">
                       <input
                         type="number" min="0" step="any"
-                        className={`w-full border rounded px-2 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.unit_price ? 'border-red-500' : 'border-gray-200'}`}
+                        className={`w-full border rounded px-1 py-1 text-sm text-right focus:outline-none ${lineErrors[i]?.unit_price ? 'border-red-500' : 'border-gray-200'}`}
                         value={l.unit_price}
                         onChange={e => updateLine(i, { unit_price: Number(e.target.value) })}
                       />
                       {lineErrors[i]?.unit_price && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].unit_price}</p>}
                     </td>
-                    <td className="px-3 py-1.5">
+                    <td className="px-1 py-1.5">
                       <div className="flex items-center gap-1">
                         <input
                           type="number" min="0" max="100" step="any"
-                          className={`flex-1 border rounded px-2 py-1 text-sm text-right focus:outline-none min-w-0 ${lineErrors[i]?.discount_pct ? 'border-red-500' : 'border-gray-200'}`}
+                          className={`flex-1 border rounded px-1 py-1 text-sm text-right focus:outline-none min-w-0 ${lineErrors[i]?.discount_pct ? 'border-red-500' : 'border-gray-200'}`}
                           value={l.discount_pct}
                           onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })}
                         />

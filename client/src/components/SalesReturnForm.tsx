@@ -76,7 +76,7 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
       setSubject(full.notes ?? '');
       const grossAmt = Number(full.gross_amount ?? 0);
       setDiscountPct(grossAmt > 0 ? String((Number(full.discount ?? 0) / grossAmt) * 100) : '0');
-      setLines(full.lines?.length ? full.lines : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()]);
     });
   }, [ret]);
 
@@ -332,8 +332,8 @@ export default function SalesReturnForm({ ret, onClose, onSaved }: Props) {
                       </div>
                     </td>
                     <td className="border border-gray-300 px-2 py-1.5">
-                      <input type="number" min="0" step="any" value={l.quantity}
-                        onChange={e => updateLine(i, { quantity: Number(e.target.value) })}
+                      <input type="number" min="0" step="1" value={l.quantity}
+                        onChange={e => updateLine(i, { quantity: Math.round(Number(e.target.value)) })}
                         className={`w-full text-right text-xs border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 ${lineErrors[i]?.quantity ? 'border-red-500' : 'border-gray-300'}`} />
                       {lineErrors[i]?.quantity && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].quantity}</p>}
                     </td>

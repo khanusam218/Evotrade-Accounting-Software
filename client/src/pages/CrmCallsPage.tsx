@@ -244,8 +244,16 @@ export default function CrmCallsPage() {
 
   return (
     <div className="p-6">
-      {/* Title */}
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">Call</h1>
+      {/* Title + Add button */}
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Call</h1>
+        <button
+          className="flex items-center gap-1 bg-green-500 text-white px-4 py-2 rounded text-sm font-medium hover:bg-green-600"
+          onClick={() => { setEditing(null); setShowForm(true); }}
+        >
+          + ADD CALL
+        </button>
+      </div>
 
       {error && <p className="text-red-600 mb-2 text-sm">{error}</p>}
 

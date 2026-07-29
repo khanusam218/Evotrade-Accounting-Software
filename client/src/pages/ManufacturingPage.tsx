@@ -3,7 +3,7 @@ import { apiFetch } from '../api/apiFetch';
 import type { BillOfMaterials } from '../types/billOfMaterials';
 import type { WorkOrder, WOStatus } from '../types/workOrder';
 import { WO_STATUS_COLORS } from '../types/workOrder';
-import { getBOMs, deleteBOM } from '../api/billsOfMaterials';
+import { getBOMs, getBOM, deleteBOM } from '../api/billsOfMaterials';
 import BOMForm from '../components/BOMForm';
 import { getWorkOrders, getWorkOrder, createWorkOrder, updateWorkOrder, startWorkOrder, completeWorkOrder, cancelWorkOrder, deleteWorkOrder } from '../api/workOrders';
 import { getProducts } from '../api/products';
@@ -121,14 +121,18 @@ function JOForm({ initial, onClose, onSaved }: {
 
   // Creating a new work order (or the user picks a different assembly BOM):
   // seed the line items from the BOM's recipe scaled to the planned quantity.
+  // `boms` comes from the list endpoint, which never includes components, so
+  // the full BOM (with its real component recipe) has to be fetched separately.
   useEffect(() => {
     if (!isNew) return;
     if (!selectedBom) { setLines([]); return; }
-    const factor = selectedBom.output_qty > 0 ? plannedQty / selectedBom.output_qty : 1;
-    setLines((selectedBom.components || []).map(c => ({
-      product_id: c.component_product_id,
-      quantity: Math.round(c.quantity * factor * 10000) / 10000,
-    })));
+    getBOM(selectedBom.id).then(full => {
+      const factor = selectedBom.output_qty > 0 ? plannedQty / selectedBom.output_qty : 1;
+      setLines((full.components || []).map(c => ({
+        product_id: c.component_product_id,
+        quantity: Math.round(c.quantity * factor * 10000) / 10000,
+      })));
+    }).catch(() => setLines([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bomId, isNew]);
 

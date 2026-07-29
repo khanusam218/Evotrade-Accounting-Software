@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { getOrCreateSeriesByPrefix } = require('../utils');
+const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
 
 async function peekNextCode(client) {
   await getOrCreateSeriesByPrefix(client, 'COU-', 6);
@@ -12,11 +12,8 @@ async function peekNextCode(client) {
 }
 
 async function consumeNextCode(client) {
-  await getOrCreateSeriesByPrefix(client, 'COU-', 6);
-  const { rows } = await client.query(
-    "UPDATE number_series SET next_number=next_number+1 WHERE prefix='COU-' RETURNING 'COU-' || lpad(next_number::text,padding::int,'0') AS code"
-  );
-  return rows[0]?.code || 'COU-000001';
+  const series = await getOrCreateSeriesByPrefix(client, 'COU-', 6);
+  return safeNextNumber(client, series, 'prefix', 'COU-', 'couriers', 'code');
 }
 
 // GET next code (peek without consuming)

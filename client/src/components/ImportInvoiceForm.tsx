@@ -10,21 +10,24 @@ const p2n = (s: string) => { const n = parseFloat(s); return isNaN(n) ? 0 : n; }
 const formatBytes = (b: number) => b < 1024 ? `${b} B` : b < 1048576 ? `${(b/1024).toFixed(1)} KB` : `${(b/1048576).toFixed(1)} MB`;
 
 interface Vendor   { id: number; print_name: string; }
-interface Product  { id: number; name: string; purchase_price: number; }
+interface Product  { id: number; name: string; purchase_price: number; purchase_tax_id?: number | null; }
 interface CAccount { id: number; name: string; code?: string; }
+interface Tax      { id: number; name: string; rate: number; }
 
 interface Props { invoice: ImportInvoice | null; onClose: () => void; onSaved: () => void; }
 
-const emptyLine = (): ImportInvoiceLine => ({ product_id: null, description: '', quantity: 1, unit_price: 0, discount_pct: 0, amount: 0 });
+const emptyLine = (): ImportInvoiceLine => ({ product_id: null, description: '', quantity: 1, unit_price: 0, discount_pct: 0, amount: 0, tax_id: null });
 const emptyExp  = (): ImportInvoiceExpense => ({ expense_type: '', account_id: null, account_name: '', description: '', contact_id: null, contact_name: '', amount: 0, distribution_method: 'value' });
 
 const lineAmt = (l: ImportInvoiceLine) => Number(l.quantity||0) * Number(l.unit_price||0) * (1 - Number(l.discount_pct||0) / 100);
+const lineTax = (l: ImportInvoiceLine, taxes: Tax[]) => { const t = taxes.find(x => x.id === l.tax_id); return t ? lineAmt(l) * t.rate / 100 : 0; };
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) {
   const [vendors,   setVendors]   = useState<Vendor[]>([]);
   const [products,  setProducts]  = useState<Product[]>([]);
   const [accounts,  setAccounts]  = useState<CAccount[]>([]);
+  const [taxes,     setTaxes]     = useState<Tax[]>([]);
   const [nextNum,   setNextNum]   = useState('II-000001');
 
   const [vendorId,  setVendorId]  = useState('');
@@ -61,6 +64,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
       const list = Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
       setAccounts(list);
     }).catch(() => {});
+    apiFetch('/api/taxes').then(r => r.json()).then(d => setTaxes(Array.isArray(d) ? d : [])).catch(() => {});
     if (!invoice) getNextImportInvoiceNumber().then(r => setNextNum(r.number)).catch(() => {});
   }, [invoice]);
 
@@ -73,7 +77,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
       setReference(full.reference ?? '');
       setSubject(full.subject ?? '');
       setNotes(full.notes ?? '');
-      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, discount_pct: Number(l.discount_pct||0) })) : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)), discount_pct: Number(l.discount_pct||0) })) : [emptyLine()]);
       const exps = full.expenses?.length ? full.expenses : [emptyExp()];
       setExpenses(exps);
       setExpAccSearch(exps.map(e => e.account_name ?? ''));
@@ -106,7 +110,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
       const next = { ...l, ...patch };
       if ('product_id' in patch) {
         const p = products.find(x => x.id === patch.product_id);
-        if (p) { next.unit_price = p.purchase_price; next.description = p.name; }
+        if (p) { next.unit_price = p.purchase_price; next.description = p.name; next.tax_id = p.purchase_tax_id ?? null; }
       }
       next.amount = lineAmt(next);
       return next;
@@ -154,10 +158,11 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
   const validLineCount = lines.filter(l => l.product_id || l.description).length;
 
   const gross    = totalBase;
+  const taxTotal = lines.reduce((s, l) => s + lineTax(l, taxes), 0);
   const discAmt  = gross * p2n(discPct) / 100;
   const shipping = p2n(shippingChgs);
   const roundOff_ = p2n(roundOff);
-  const net      = gross - discAmt + shipping + roundOff_ + totalExp;
+  const net      = gross - discAmt + taxTotal + shipping + roundOff_ + totalExp;
   const balance  = net;
 
   function linePct(l: ImportInvoiceLine) { return totalBase > 0 ? lineAmt(l) / totalBase * 100 : 0; }
@@ -330,6 +335,8 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-24">Quantity</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-28">Price</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-28">Disc.</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-28">Tax</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-24">Tax Amt</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-28">Amount</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-24">Percentage</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-28">Expenses</th>
@@ -361,9 +368,9 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                             placeholder="Type to search product"
                           />
                         </td>
-                        <td className="px-2 py-1.5">
-                          <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
-                            value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} />
+                        <td className="px-1 py-1.5">
+                          <input type="number" min="0" step="1" className={`w-full border rounded px-1 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
+                            value={l.quantity} onChange={e => updateLine(i, { quantity: Math.round(Number(e.target.value)) })} />
                         </td>
                         <td className="px-2 py-1.5">
                           <input type="number" min="0" step="any" className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`price_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
@@ -376,6 +383,14 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                             <span className="text-xs text-gray-500 flex-shrink-0">%</span>
                           </div>
                         </td>
+                        <td className="px-1 py-1.5">
+                          <select className="w-full border border-gray-200 rounded px-1 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-gray-50"
+                            value={l.tax_id ?? ''} onChange={e => updateLine(i, { tax_id: e.target.value ? Number(e.target.value) : null })}>
+                            <option value="">None</option>
+                            {taxes.map(t => <option key={t.id} value={t.id}>{t.name} ({t.rate}%)</option>)}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-sm text-gray-700 font-mono">{fmt(lineTax(l, taxes))}</td>
                         <td className="px-2 py-1.5">
                           <div className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right bg-gray-50 font-mono">
                             {fmt(amt)}
@@ -599,7 +614,7 @@ export default function ImportInvoiceForm({ invoice, onClose, onSaved }: Props) 
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Tax</span>
-                    <span className="font-mono text-gray-800">0.00</span>
+                    <span className="font-mono text-gray-800">{fmt(taxTotal)}</span>
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-gray-100">
                     <span className="text-gray-600 font-medium">Shipping Charges</span>

@@ -45,7 +45,7 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
       setVendorId(String(full.vendor_id)); setWarehouseId(String(full.warehouse_id));
       setOrderId(full.order_id ? String(full.order_id) : '');
       setDate(full.date?.slice(0,10) ?? ''); setReference(full.reference ?? ''); setNotes(full.notes ?? '');
-      setLines(full.lines?.length ? full.lines : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, ordered_qty: Math.round(Number(l.ordered_qty)), received_qty: Math.round(Number(l.received_qty)) })) : [emptyLine()]);
     });
   }, [receipt]);
 
@@ -122,7 +122,7 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
               <table className="w-full text-sm border-collapse">
                 <thead><tr className="bg-gray-50">
                   <th className="table-th w-36">Product</th><th className="table-th">Description</th>
-                  <th className="table-th w-24">Ordered Qty</th><th className="table-th w-24">Received Qty</th>
+                  <th className="table-th w-28">Ordered Qty</th><th className="table-th w-28">Received Qty</th>
                   <th className="table-th w-28">Unit Cost</th><th className="table-th w-8"></th>
                 </tr></thead>
                 <tbody>
@@ -132,9 +132,9 @@ export default function PurchaseReceiptForm({ receipt, onClose, onSaved }: Props
                         <option value="">–</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
                       <td className="table-td"><input className="input py-1 text-xs" value={l.description} onChange={e => updLine(i, { description: e.target.value })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`ordered_${i}`] ? 'border-red-500' : ''}`} value={l.ordered_qty} onChange={e => updLine(i, { ordered_qty: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`received_${i}`] ? 'border-red-500' : ''}`} value={l.received_qty} onChange={e => updLine(i, { received_qty: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${errors[`cost_${i}`] ? 'border-red-500' : ''}`} value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" step="1" className={`input px-1 py-1 text-xs text-right ${errors[`ordered_${i}`] ? 'border-red-500' : ''}`} value={l.ordered_qty} onChange={e => updLine(i, { ordered_qty: Math.round(Number(e.target.value)) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" step="1" className={`input px-1 py-1 text-xs text-right ${errors[`received_${i}`] ? 'border-red-500' : ''}`} value={l.received_qty} onChange={e => updLine(i, { received_qty: Math.round(Number(e.target.value)) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" step="any" className={`input px-1 py-1 text-xs text-right ${errors[`cost_${i}`] ? 'border-red-500' : ''}`} value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} /></td>
                       <td className="table-td text-center">{lines.length > 1 && <button type="button" onClick={() => setLines(prev => prev.filter((_,j) => j !== i))} className="text-red-400 hover:text-red-600">&times;</button>}</td>
                     </tr>
                   ))}

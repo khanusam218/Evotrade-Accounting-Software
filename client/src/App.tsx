@@ -54,6 +54,7 @@ import POSCountersPage        from './pages/POSCountersPage';
 import DeliveryCounterPage    from './pages/DeliveryCounterPage';
 import BarcodeTemplatesPage   from './pages/BarcodeTemplatesPage';
 import POSDailySummaryPage    from './pages/POSDailySummaryPage';
+import POSTransactionsPage    from './pages/POSTransactionsPage';
 import DashboardPage          from './pages/DashboardPage';
 import ReportsPage            from './pages/ReportsPage';
 import LoginPage              from './pages/LoginPage';
@@ -251,10 +252,11 @@ function Sidebar() {
         </Section>
 
         {/* ── POS ── */}
-        <Section icon={I.pos} label="POS" paths={['/pos', '/barcode-templates', '/pos/delivery-counters', '/pos/daily-summary']}>
+        <Section icon={I.pos} label="POS" paths={['/pos', '/barcode-templates', '/pos/delivery-counters', '/pos/daily-summary', '/pos/transactions']}>
           <SubLink to="/pos/counters"          label="Checkout Counter" />
           <SubLink to="/pos"                   label="POS Terminal" />
           <SubLink to="/pos/delivery-counters" label="Delivery Counters" />
+          <SubLink to="/pos/transactions"      label="Transactions" />
           <SubLink to="/pos/daily-summary"     label="Daily Summary" />
           <SubLink to="/barcode-templates"     label="Barcode Templates" />
         </Section>
@@ -421,6 +423,7 @@ function ProtectedApp() {
             <Route path="/pos/counters"              element={<POSCountersPage />} />
             <Route path="/pos/delivery-counters"     element={<DeliveryCounterPage />} />
             <Route path="/pos/daily-summary"         element={<POSDailySummaryPage />} />
+            <Route path="/pos/transactions"          element={<POSTransactionsPage />} />
             <Route path="/barcode-templates"         element={<BarcodeTemplatesPage />} />
 
             {/* Manufacturing */}

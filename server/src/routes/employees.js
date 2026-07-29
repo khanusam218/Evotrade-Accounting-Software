@@ -1,14 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { getOrCreateSeriesByPrefix } = require('../utils');
+const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
 
 async function nextCode(client) {
-  await getOrCreateSeriesByPrefix(client, 'EMP-', 5);
-  const { rows } = await client.query(
-    "UPDATE number_series SET next_number=next_number+1 WHERE prefix='EMP-' RETURNING lpad(next_number::text,padding::int,'0')"
-  );
-  return 'EMP-' + rows[0].lpad;
+  const series = await getOrCreateSeriesByPrefix(client, 'EMP-', 5);
+  return safeNextNumber(client, series, 'prefix', 'EMP-', 'employees', 'code');
 }
 
 router.get('/', async (req, res) => {

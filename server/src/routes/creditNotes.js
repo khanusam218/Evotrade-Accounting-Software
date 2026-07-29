@@ -1,19 +1,12 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { getOrCreateSeries } = require('../utils');
+const { getOrCreateSeries, safeNextNumber } = require('../utils');
 const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateCNNumber(client) {
-  await getOrCreateSeries(client, 'Credit Notes', 'CN-', 6);
-  const { rows } = await client.query(
-    `UPDATE number_series SET next_number = next_number + 1
-      WHERE name = 'Credit Notes'
-      RETURNING prefix, next_number - 1 AS num, padding`
-  );
-  if (!rows.length) throw new Error('Number series "Credit Notes" not found');
-  const { prefix, num, padding } = rows[0];
-  return `${prefix}${String(num).padStart(padding, '0')}`;
+  const series = await getOrCreateSeries(client, 'Credit Notes', 'CN-', 6);
+  return safeNextNumber(client, series, 'name', 'Credit Notes', 'credit_notes', 'number');
 }
 
 const CN_SELECT = `

@@ -40,7 +40,7 @@ export default function StockAdjustmentForm({ adj, onClose, onSaved }: Props) {
     getStockAdjustment(adj.id).then(full => {
       setWarehouseId(String(full.warehouse_id)); setDate(full.date?.slice(0,10) ?? '');
       setReference(full.reference ?? ''); setNotes(full.notes ?? '');
-      setLines(full.lines?.length ? full.lines : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, current_qty: Math.round(Number(l.current_qty)), new_qty: Math.round(Number(l.new_qty)) })) : [emptyLine()]);
     });
   }, [adj]);
 
@@ -117,9 +117,9 @@ export default function StockAdjustmentForm({ adj, onClose, onSaved }: Props) {
               {errors.lines && <p className="text-xs text-red-500 mb-2">{errors.lines}</p>}
               <table className="w-full text-sm border-collapse">
                 <thead><tr className="bg-gray-50">
-                  <th className="table-th">Product</th><th className="table-th w-24">Current Qty</th>
-                  <th className="table-th w-24">New Qty</th><th className="table-th w-24">Difference</th>
-                  <th className="table-th w-24">Unit Cost</th><th className="table-th">Notes</th><th className="table-th w-8"></th>
+                  <th className="table-th">Product</th><th className="table-th w-28">Current Qty</th>
+                  <th className="table-th w-28">New Qty</th><th className="table-th w-24">Difference</th>
+                  <th className="table-th w-28">Unit Cost</th><th className="table-th">Notes</th><th className="table-th w-8"></th>
                 </tr></thead>
                 <tbody>
                   {lines.map((l, i) => (
@@ -127,21 +127,21 @@ export default function StockAdjustmentForm({ adj, onClose, onSaved }: Props) {
                       <td className="table-td"><select className="input py-1 text-xs" value={l.product_id ?? ''} onChange={e => updLine(i, { product_id: e.target.value ? Number(e.target.value) : null })}>
                         <option value="">Select…</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
-                      <td className="table-td">
-                        <input type="number" step="any" className={`input py-1 text-xs text-right ${lineErrors[i]?.current_qty ? 'border-red-500' : ''}`} value={l.current_qty} onChange={e => updLine(i, { current_qty: Number(e.target.value) })} />
+                      <td className="table-td px-1">
+                        <input type="number" step="1" className={`input px-1 py-1 text-xs text-right ${lineErrors[i]?.current_qty ? 'border-red-500' : ''}`} value={l.current_qty} onChange={e => updLine(i, { current_qty: Math.round(Number(e.target.value)) })} />
                         {lineErrors[i]?.current_qty && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].current_qty}</p>}
                       </td>
-                      <td className="table-td">
-                        <input type="number" step="any" className={`input py-1 text-xs text-right ${lineErrors[i]?.new_qty ? 'border-red-500' : ''}`} value={l.new_qty} onChange={e => updLine(i, { new_qty: Number(e.target.value) })} />
+                      <td className="table-td px-1">
+                        <input type="number" step="1" className={`input px-1 py-1 text-xs text-right ${lineErrors[i]?.new_qty ? 'border-red-500' : ''}`} value={l.new_qty} onChange={e => updLine(i, { new_qty: Math.round(Number(e.target.value)) })} />
                         {lineErrors[i]?.new_qty && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].new_qty}</p>}
                       </td>
                       <td className="table-td text-right text-xs">
                         <span className={l.new_qty - l.current_qty > 0 ? 'text-green-600' : l.new_qty - l.current_qty < 0 ? 'text-red-600' : ''}>
-                          {l.new_qty - l.current_qty > 0 ? '+' : ''}{(l.new_qty - l.current_qty).toFixed(4)}
+                          {l.new_qty - l.current_qty > 0 ? '+' : ''}{(l.new_qty - l.current_qty).toFixed(0)}
                         </span>
                       </td>
-                      <td className="table-td">
-                        <input type="number" min="0" step="any" className={`input py-1 text-xs text-right ${lineErrors[i]?.unit_cost ? 'border-red-500' : ''}`} value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} />
+                      <td className="table-td px-1">
+                        <input type="number" min="0" step="any" className={`input px-1 py-1 text-xs text-right ${lineErrors[i]?.unit_cost ? 'border-red-500' : ''}`} value={l.unit_cost} onChange={e => updLine(i, { unit_cost: Number(e.target.value) })} />
                         {lineErrors[i]?.unit_cost && <p className="text-xs text-red-500 mt-0.5">{lineErrors[i].unit_cost}</p>}
                       </td>
                       <td className="table-td"><input className="input py-1 text-xs" value={l.notes ?? ''} onChange={e => updLine(i, { notes: e.target.value || null })} /></td>

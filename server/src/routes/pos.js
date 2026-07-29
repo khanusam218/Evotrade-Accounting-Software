@@ -1,22 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { getOrCreateSeriesByPrefix } = require('../utils');
+const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
 
 async function nextSessionNumber(client) {
-  await getOrCreateSeriesByPrefix(client, 'PSS-', 4);
-  const { rows } = await client.query(
-    "UPDATE number_series SET next_number=next_number+1 WHERE prefix='PSS-' RETURNING lpad(next_number::text,padding::int,'0')"
-  );
-  return 'PSS-' + rows[0].lpad;
+  const series = await getOrCreateSeriesByPrefix(client, 'PSS-', 4);
+  return safeNextNumber(client, series, 'prefix', 'PSS-', 'pos_sessions', 'number');
 }
 
 async function nextTxNumber(client) {
-  await getOrCreateSeriesByPrefix(client, 'POS-', 6);
-  const { rows } = await client.query(
-    "UPDATE number_series SET next_number=next_number+1 WHERE prefix='POS-' RETURNING lpad(next_number::text,padding::int,'0')"
-  );
-  return 'POS-' + rows[0].lpad;
+  const series = await getOrCreateSeriesByPrefix(client, 'POS-', 6);
+  return safeNextNumber(client, series, 'prefix', 'POS-', 'pos_transactions', 'number');
+}
+
+async function nextReturnNumber(client) {
+  const series = await getOrCreateSeriesByPrefix(client, 'PSR-', 6);
+  return safeNextNumber(client, series, 'prefix', 'PSR-', 'pos_transactions', 'number');
 }
 
 const SESSION_SELECT = `
@@ -140,7 +139,18 @@ router.get('/transactions/:id', async (req, res) => {
       'SELECT l.*, p.name AS product_name FROM pos_transaction_lines l LEFT JOIN products p ON p.id=l.product_id WHERE l.transaction_id=$1 ORDER BY l.id',
       [tx.id]
     );
-    tx.lines = lines;
+    // How much of each product has already been returned against this sale,
+    // so the Sale Return UI can cap further returns at what's actually left.
+    const { rows: returned } = await pool.query(
+      `SELECT rl.product_id, COALESCE(SUM(rl.quantity),0) AS returned_qty
+         FROM pos_transaction_lines rl
+         JOIN pos_transactions rt ON rt.id = rl.transaction_id
+        WHERE rt.original_transaction_id = $1 AND rt.status = 'return'
+        GROUP BY rl.product_id`,
+      [tx.id]
+    );
+    const returnedByProduct = Object.fromEntries(returned.map(r => [r.product_id, Number(r.returned_qty)]));
+    tx.lines = lines.map(l => ({ ...l, returned_qty: returnedByProduct[l.product_id] || 0 }));
     res.json(tx);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -235,6 +245,108 @@ router.post('/transactions/:id/void', async (req, res) => {
   finally { client.release(); }
 });
 
+// Process a Sale Return against an original completed transaction. Creates a
+// new pos_transaction (status='return', linked via original_transaction_id)
+// for just the lines/quantities being returned, and adds the returned stock
+// back — the reverse of what the original sale did.
+router.post('/transactions/:id/return', async (req, res) => {
+  const { session_id, payment_mode = 'cash', notes, lines = [] } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: origRows } = await client.query(
+      "SELECT * FROM pos_transactions WHERE id=$1 AND status='completed' FOR UPDATE", [req.params.id]
+    );
+    if (!origRows.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Original sale not found or not completed' });
+    }
+    const orig = origRows[0];
+
+    const { rows: sess } = await client.query(
+      "SELECT id, warehouse_id FROM pos_sessions WHERE id=$1 AND status='open'", [session_id]
+    );
+    if (!sess.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No open session found' });
+    }
+    const session = sess[0];
+
+    const validLines = lines.filter(l => Number(l.quantity) > 0);
+    if (!validLines.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Select at least one line and quantity to return' });
+    }
+
+    // Cap each product at what's actually left to return (original qty minus
+    // whatever's already been returned against this same sale) — enforced
+    // server-side so it can't be bypassed even by calling this API directly.
+    const { rows: origLineRows } = await client.query(
+      'SELECT product_id, quantity FROM pos_transaction_lines WHERE transaction_id=$1', [orig.id]
+    );
+    const origQtyByProduct = {};
+    for (const l of origLineRows) origQtyByProduct[l.product_id] = (origQtyByProduct[l.product_id] || 0) + Number(l.quantity);
+
+    const { rows: alreadyReturnedRows } = await client.query(
+      `SELECT rl.product_id, COALESCE(SUM(rl.quantity),0) AS qty
+         FROM pos_transaction_lines rl
+         JOIN pos_transactions rt ON rt.id = rl.transaction_id
+        WHERE rt.original_transaction_id=$1 AND rt.status='return'
+        GROUP BY rl.product_id`,
+      [orig.id]
+    );
+    const alreadyReturnedByProduct = Object.fromEntries(alreadyReturnedRows.map(r => [r.product_id, Number(r.qty)]));
+
+    for (const l of validLines) {
+      const already  = alreadyReturnedByProduct[l.product_id] || 0;
+      const original = origQtyByProduct[l.product_id] || 0;
+      const remaining = original - already;
+      if (Number(l.quantity) > remaining) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Cannot return ${l.quantity} of "${l.description}" — only ${remaining} remaining to return on this sale.`,
+        });
+      }
+    }
+
+    const subtotal = validLines.reduce((s, l) => s + Number(l.unit_price) * Number(l.quantity) * (1 - Number(l.discount_pct || 0) / 100), 0);
+    const taxTotal  = validLines.reduce((s, l) => s + Number(l.tax_amount || 0), 0);
+    const total     = subtotal + taxTotal;
+
+    const number = await nextReturnNumber(client);
+    const { rows } = await client.query(
+      `INSERT INTO pos_transactions
+         (number,session_id,customer_id,subtotal,tax_total,discount,total,paid_amount,change_amount,payment_mode,notes,status,original_transaction_id)
+       VALUES ($1,$2,$3,$4,$5,0,$6,$6,0,$7,$8,'return',$9) RETURNING *`,
+      [number, session_id, orig.customer_id, subtotal, taxTotal, total, payment_mode, notes || null, orig.id]
+    );
+    const txId = rows[0].id;
+
+    for (const l of validLines) {
+      const net = Number(l.unit_price) * Number(l.quantity) * (1 - Number(l.discount_pct || 0) / 100);
+      await client.query(
+        `INSERT INTO pos_transaction_lines
+           (transaction_id,product_id,description,quantity,unit_price,discount_pct,tax_id,tax_amount,amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [txId, l.product_id || null, l.description || '', l.quantity, l.unit_price || 0, l.discount_pct || 0, l.tax_id || null, l.tax_amount || 0, net]
+      );
+
+      if (session.warehouse_id && l.product_id) {
+        await client.query(
+          `INSERT INTO product_stock (product_id,warehouse_id,qty_on_hand) VALUES ($1,$2,$3)
+           ON CONFLICT (product_id,warehouse_id) DO UPDATE SET qty_on_hand=product_stock.qty_on_hand + $3`,
+          [l.product_id, session.warehouse_id, l.quantity]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json(rows[0]);
+  } catch (e) { await client.query('ROLLBACK'); res.status(400).json({ error: e.message }); }
+  finally { client.release(); }
+});
+
 // ─── Cash movements (Cash In / Cash Out via Funds Transfer) ─────────────────
 
 router.get('/cash-movements', async (req, res) => {
@@ -312,7 +424,7 @@ router.get('/daily-summary', async (req, res) => {
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='cash'), 0) AS total_cash,
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode IN ('card','bank')), 0) AS total_bank,
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='cheque'), 0) AS total_cheque,
-         0 AS total_returns
+         COALESCE(SUM(t.total) FILTER (WHERE t.status='return'), 0) AS total_returns
        FROM pos_transactions t
        JOIN pos_sessions s ON s.id = t.session_id
        WHERE t.date::date BETWEEN $1 AND $2 ${counterFilter}
@@ -348,7 +460,7 @@ router.get('/daily-summary', async (req, res) => {
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='cash'), 0) AS total_cash,
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode IN ('card','bank')), 0) AS total_bank,
          COALESCE(SUM(t.total) FILTER (WHERE t.status='completed' AND t.payment_mode='cheque'), 0) AS total_cheque,
-         0 AS total_returns
+         COALESCE(SUM(t.total) FILTER (WHERE t.status='return'), 0) AS total_returns
        FROM pos_transactions t
        JOIN pos_sessions s ON s.id = t.session_id
        WHERE t.date::date BETWEEN $1 AND $2 ${counterFilter}`,

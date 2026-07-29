@@ -74,7 +74,7 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
       const grossAmt = Number(full.gross_amount ?? 0);
       setDiscPct(grossAmt > 0 ? String((Number(full.discount ?? 0) / grossAmt) * 100) : '0');
       setShippingCharges(String(full.shipping_charges ?? 0));
-      const ls = full.lines?.length ? full.lines : [emptyLine()];
+      const ls = full.lines?.length ? full.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()];
       setLines(ls);
       setLineRaws(ls.map(l => ({ qty: String(l.quantity), price: String(l.unit_price), disc: String(l.discount_pct) })));
       setNextNum(full.number);
@@ -287,6 +287,8 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-28">Quantity</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-32">Price</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-32">Disc.</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700 w-32">Tax</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-24">Tax Amt</th>
                     <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700 w-32">Amount</th>
                     <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700 w-16">Action</th>
                   </tr>
@@ -303,19 +305,19 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                             {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="px-1 py-1.5">
                           <input
                             type="text"
-                            inputMode="decimal"
-                            className={`w-full border rounded px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
+                            inputMode="numeric"
+                            className={`w-full border rounded px-1 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-green-500 ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-200'}`}
                             value={raw.qty}
                             onChange={e => {
                               const v = e.target.value;
-                              if (!/^-?\d*\.?\d*$/.test(v) && v !== '') return;
-                              updateLine(i, { quantity: p2n(v) }, { qty: v });
+                              if (!/^-?\d*$/.test(v) && v !== '') return;
+                              updateLine(i, { quantity: Math.round(p2n(v)) }, { qty: v });
                             }}
                             onBlur={e => {
-                              const n = p2n(e.target.value);
+                              const n = Math.round(p2n(e.target.value));
                               updateLine(i, { quantity: n }, { qty: String(n) });
                             }}
                           />
@@ -357,6 +359,14 @@ export default function PurchaseReturnForm({ ret, onClose, onSaved }: Props) {
                             <span className="text-xs text-gray-500 flex-shrink-0">%</span>
                           </div>
                         </td>
+                        <td className="px-1 py-1.5">
+                          <select className="w-full border border-gray-200 rounded px-1 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 bg-gray-50"
+                            value={l.tax_id ?? ''} onChange={e => updateLine(i, { tax_id: e.target.value ? Number(e.target.value) : null })}>
+                            <option value="">None</option>
+                            {taxes.map(t => <option key={t.id} value={t.id}>{t.name} ({t.rate}%)</option>)}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-sm text-gray-700 font-mono">{lineTax(l, taxes).toFixed(2)}</td>
                         <td className="px-2 py-1.5">
                           <div className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm text-right bg-gray-50 font-mono">
                             {lineAmt(l).toFixed(2)}

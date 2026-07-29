@@ -34,6 +34,7 @@ interface LineRaw { qty: string; price: string; disc: string; }
 const emptyRaw = (): LineRaw => ({ qty: '1', price: '0', disc: '0' });
 const p2n = (s: string) => { const n = parseFloat(s); return isNaN(n) ? 0 : n; };
 const numRx = /^\d*\.?\d*$/;
+const intRx = /^\d*$/;
 
 function lineAmount(l: SalesInvoiceLine) {
   return Number(l.quantity) * Number(l.unit_price) * (1 - Number(l.discount_pct) / 100);
@@ -109,7 +110,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
     setDiscountPct(Number(invoice.discount_pct ?? 0));
     setShippingChgs(Number(invoice.shipping_charges ?? 0));
     getSalesInvoice(invoice.id).then(inv => {
-      const ls = inv.lines?.length ? inv.lines : [emptyLine()];
+      const ls = inv.lines?.length ? inv.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()];
       setLines(ls);
       setLineRaws(ls.map(l => ({ qty: String(l.quantity ?? 1), price: String(l.unit_price ?? 0), disc: String(l.discount_pct ?? 0) })));
     });
@@ -123,7 +124,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
       setDiscountPct(Number(q.discount_pct ?? 0));
       setShippingChgs(Number(q.shipping_charges ?? 0));
       if (q.lines?.length) {
-        const ls = q.lines.map(l => ({ ...l } as SalesInvoiceLine));
+        const ls = q.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) } as SalesInvoiceLine));
         setLines(ls);
         setLineRaws(ls.map(l => ({ qty: String(l.quantity ?? 1), price: String(l.unit_price ?? 0), disc: String(l.discount_pct ?? 0) })));
       }
@@ -138,7 +139,7 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
       setDiscountPct(Number(o.discount_pct ?? 0));
       setShippingChgs(Number(o.shipping_charges ?? 0));
       if (o.lines?.length) {
-        const ls = o.lines.map(l => ({ ...l } as SalesInvoiceLine));
+        const ls = o.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) } as SalesInvoiceLine));
         setLines(ls);
         setLineRaws(ls.map(l => ({ qty: String(l.quantity ?? 1), price: String(l.unit_price ?? 0), disc: String(l.discount_pct ?? 0) })));
       }
@@ -377,9 +378,9 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                     <tr>
                       <th className="table-th w-40">Product</th>
                       <th className="table-th">Description</th>
-                      <th className="table-th text-right w-24">Qty</th>
+                      <th className="table-th text-right w-28">Qty</th>
                       <th className="table-th text-right w-32">Price</th>
-                      <th className="table-th text-right w-20">Disc%</th>
+                      <th className="table-th text-right w-24">Disc%</th>
                       <th className="table-th w-28">Tax</th>
                       <th className="table-th text-right w-20">Tax Amt</th>
                       <th className="table-th text-right w-24">Amount</th>
@@ -398,28 +399,28 @@ export default function SalesInvoiceForm({ invoice, fromQuotation, fromOrder, on
                         <td className="table-td">
                           <input className="input w-full text-xs" value={l.description} onChange={e => updateLine(i, 'description', e.target.value)} />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
-                            type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            type="text" inputMode="numeric"
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.qty ?? String(l.quantity ?? 1)}
-                            onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'quantity', p2n(e.target.value) || 1, { qty: e.target.value }); }}
-                            onBlur={e => { const n = p2n(e.target.value) || 1; updateLine(i, 'quantity', n, { qty: String(n) }); }}
+                            onChange={e => { if (!intRx.test(e.target.value)) return; updateLine(i, 'quantity', parseInt(e.target.value, 10) || 1, { qty: e.target.value }); }}
+                            onBlur={e => { const n = parseInt(e.target.value, 10) || 1; updateLine(i, 'quantity', n, { qty: String(n) }); }}
                           />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
                             type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.price ?? String(l.unit_price ?? 0)}
                             onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'unit_price', p2n(e.target.value), { price: e.target.value }); }}
                             onBlur={e => { const n = p2n(e.target.value); updateLine(i, 'unit_price', n, { price: String(n) }); }}
                           />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
                             type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.disc ?? String(l.discount_pct ?? 0)}
                             onChange={e => { if (!numRx.test(e.target.value)) return; updateLine(i, 'discount_pct', p2n(e.target.value), { disc: e.target.value }); }}
                             onBlur={e => { const n = Math.min(100, Math.max(0, p2n(e.target.value))); updateLine(i, 'discount_pct', n, { disc: String(n) }); }}

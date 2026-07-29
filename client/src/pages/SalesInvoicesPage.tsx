@@ -250,9 +250,10 @@ export default function SalesInvoicesPage() {
     setDeliveriesData([]);
     setDeliveriesLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (r.order_id) params.order_id = String(r.order_id);
-      else params.customer_id = String(r.customer_id);
+      // Deliveries have no direct link to an invoice — match by customer so a
+      // delivery still shows up even when its optional Sale Order field was
+      // left blank (very easy to do, since nothing requires/defaults it).
+      const params: Record<string, string> = { customer_id: String(r.customer_id) };
       const data = await getSalesDeliveries(params);
       setDeliveriesData(data);
     } catch { setDeliveriesData([]); }

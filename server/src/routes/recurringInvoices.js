@@ -1,26 +1,16 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { getOrCreateSeries } = require('../utils');
+const { getOrCreateSeries, safeNextNumber } = require('../utils');
 
 async function nextRINumber(client) {
-  await getOrCreateSeries(client, 'Recurring Invoices', 'RI-', 6);
-  const r = await client.query(
-    `UPDATE number_series SET next_number = next_number + 1
-     WHERE name = 'Recurring Invoices'
-     RETURNING prefix || LPAD((next_number - 1)::text, padding, '0') AS num`
-  );
-  return r.rows[0].num;
+  const series = await getOrCreateSeries(client, 'Recurring Invoices', 'RI-', 6);
+  return safeNextNumber(client, series, 'name', 'Recurring Invoices', 'recurring_invoices', 'number');
 }
 
 async function nextSINumber(client) {
-  await getOrCreateSeries(client, 'Sales Invoices', 'SI-', 6);
-  const r = await client.query(
-    `UPDATE number_series SET next_number = next_number + 1
-     WHERE name = 'Sales Invoices'
-     RETURNING prefix || LPAD((next_number - 1)::text, padding, '0') AS num`
-  );
-  return r.rows[0].num;
+  const series = await getOrCreateSeries(client, 'Sales Invoices', 'SI-', 6);
+  return safeNextNumber(client, series, 'name', 'Sales Invoices', 'sales_invoices', 'number');
 }
 
 async function saveLines(client, riId, lines) {

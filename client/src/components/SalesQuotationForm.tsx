@@ -69,7 +69,7 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
     setNotes(quotation.notes ?? '');
     setDiscountPct(Number(quotation.discount_pct ?? 0));
     setShipping(Number(quotation.shipping_charges ?? 0));
-    getSalesQuotation(quotation.id).then(q => setLines(q.lines?.length ? q.lines : [emptyLine()]));
+    getSalesQuotation(quotation.id).then(q => setLines(q.lines?.length ? q.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()]));
   }, [quotation]);
 
   const gross       = lines.reduce((s, l) => s + lineAmount(l), 0);
@@ -245,9 +245,9 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
                     <tr>
                       <th className="table-th w-40">Product</th>
                       <th className="table-th">Description</th>
-                      <th className="table-th text-right w-20">Qty</th>
-                      <th className="table-th text-right w-28">Price</th>
-                      <th className="table-th text-right w-20">Disc.%</th>
+                      <th className="table-th text-right w-24">Qty</th>
+                      <th className="table-th text-right w-32">Price</th>
+                      <th className="table-th text-right w-24">Disc.%</th>
                       <th className="table-th w-32">Tax</th>
                       <th className="table-th text-right w-24">Tax Amt</th>
                       <th className="table-th text-right w-28">Amount</th>
@@ -269,19 +269,19 @@ export default function SalesQuotationForm({ quotation, onClose, onSaved }: Prop
                           <input className="input w-full text-xs py-1" value={l.description}
                             onChange={e => updateLine(i, 'description', e.target.value)} />
                         </td>
-                        <td className="table-td">
-                          <input type="number" className={`input w-full text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
-                            value={l.quantity} min="0.0001" step="0.0001"
-                            onChange={e => updateLine(i, 'quantity', parseFloat(e.target.value) || 1)} />
+                        <td className="table-td px-1">
+                          <input type="number" className={`input w-full px-1 text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            value={l.quantity} min="1" step="1"
+                            onChange={e => updateLine(i, 'quantity', Math.round(parseFloat(e.target.value)) || 1)} />
                         </td>
-                        <td className="table-td">
-                          <input type="number" className={`input w-full text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
+                        <td className="table-td px-1">
+                          <input type="number" className={`input w-full px-1 text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={l.unit_price} min="0" step="0.0001"
                             onChange={e => updateLine(i, 'unit_price', parseFloat(e.target.value) || 0)} />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <div className="flex items-center gap-1">
-                            <input type="number" className={`input flex-1 text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            <input type="number" className={`input flex-1 px-1 text-right text-xs py-1 ${lineErrors[i] ? 'border-red-500' : ''}`}
                               value={l.discount_pct} min="0" max="100" step="0.01"
                               onChange={e => updateLine(i, 'discount_pct', parseFloat(e.target.value) || 0)} />
                             <span className="text-gray-400 text-xs">%</span>

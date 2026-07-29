@@ -1,5 +1,5 @@
 export type POSSessionStatus = 'open' | 'closed';
-export type POSTxStatus = 'completed' | 'voided';
+export type POSTxStatus = 'completed' | 'voided' | 'return';
 
 export interface POSCounter {
   id: number;
@@ -47,6 +47,7 @@ export interface POSTransactionLine {
   tax_id: number | null;
   tax_amount: number;
   amount: number;
+  returned_qty?: number;
 }
 
 export interface POSTransaction {
@@ -65,5 +66,6 @@ export interface POSTransaction {
   payment_mode: string;
   status: POSTxStatus;
   notes: string | null;
+  original_transaction_id?: number | null;
   lines?: POSTransactionLine[];
 }

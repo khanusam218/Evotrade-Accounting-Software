@@ -40,7 +40,7 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
       setVendorId(String(full.vendor_id)); setDate(full.date?.slice(0,10) ?? '');
       setReference(full.reference ?? ''); setNotes(full.notes ?? '');
       setDiscount(String(full.discount ?? 0));
-      setLines(full.lines?.length ? full.lines : [emptyLine()]);
+      setLines(full.lines?.length ? full.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()]);
     });
   }, [quotation]);
 
@@ -118,8 +118,8 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
               <table className="w-full text-sm border-collapse">
                 <thead><tr className="bg-gray-50">
                   <th className="table-th w-36">Product</th><th className="table-th">Description</th>
-                  <th className="table-th w-20 text-right">Qty</th><th className="table-th w-28 text-right">Unit Price</th>
-                  <th className="table-th w-20 text-right">Disc%</th><th className="table-th w-32">Tax</th>
+                  <th className="table-th w-24 text-right">Qty</th><th className="table-th w-32 text-right">Unit Price</th>
+                  <th className="table-th w-24 text-right">Disc%</th><th className="table-th w-32">Tax</th>
                   <th className="table-th w-24 text-right">Tax Amt</th><th className="table-th w-28 text-right">Amount</th><th className="table-th w-8"></th>
                 </tr></thead>
                 <tbody>
@@ -129,9 +129,9 @@ export default function PurchaseQuotationForm({ quotation, onClose, onSaved }: P
                         <option value="">–</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select></td>
                       <td className="table-td"><input className="input py-1 text-xs" value={l.description} onChange={e => updateLine(i, { description: e.target.value })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right w-full ${errors[`qty_${i}`] ? 'border-red-500' : ''}`} value={l.quantity} onChange={e => updateLine(i, { quantity: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" step="any" className={`input py-1 text-xs text-right w-full ${errors[`price_${i}`] ? 'border-red-500' : ''}`} value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} /></td>
-                      <td className="table-td"><input type="number" min="0" max="100" step="any" className={`input py-1 text-xs text-right w-full ${errors[`disc_${i}`] ? 'border-red-500' : ''}`} value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" step="1" className={`input px-1 py-1 text-xs text-right w-full ${errors[`qty_${i}`] ? 'border-red-500' : ''}`} value={l.quantity} onChange={e => updateLine(i, { quantity: Math.round(Number(e.target.value)) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" step="any" className={`input px-1 py-1 text-xs text-right w-full ${errors[`price_${i}`] ? 'border-red-500' : ''}`} value={l.unit_price} onChange={e => updateLine(i, { unit_price: Number(e.target.value) })} /></td>
+                      <td className="table-td px-1"><input type="number" min="0" max="100" step="any" className={`input px-1 py-1 text-xs text-right w-full ${errors[`disc_${i}`] ? 'border-red-500' : ''}`} value={l.discount_pct} onChange={e => updateLine(i, { discount_pct: Number(e.target.value) })} /></td>
                       <td className="table-td"><select className="input py-1 text-xs" value={l.tax_id ?? ''} onChange={e => { const tid = e.target.value ? Number(e.target.value) : null; setLines(prev => { const n=[...prev]; n[i]={...n[i],tax_id:tid,tax_amount:lineTax({...n[i],tax_id:tid},taxes)}; return n; }); }}>
                         <option value="">None</option>{taxes.map(t => <option key={t.id} value={t.id}>{t.name} ({t.rate}%)</option>)}
                       </select></td>

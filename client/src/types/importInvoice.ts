@@ -22,6 +22,10 @@ export interface ImportInvoiceLine {
   discount_pct: number;
   amount: number;
   allocation_pct?: number;
+  tax_id?: number | null;
+  tax_name?: string;
+  tax_rate?: number;
+  tax_amount?: number;
 }
 
 export interface ImportInvoiceExpense {
@@ -50,6 +54,8 @@ export interface ImportInvoice {
   discount_pct?: number;
   shipping_charges?: number;
   round_off?: number;
+  gross_amount?: number;
+  tax_amount?: number;
   net_amount: number;
   expense_total: number;
   total_landed_cost: number;

@@ -92,7 +92,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
     setDiscountPct(Number(order.discount_pct ?? 0));
     setShippingChgs(Number(order.shipping_charges ?? 0));
     getSalesOrder(order.id).then(o => {
-      const ls = o.lines?.length ? o.lines : [emptyLine()];
+      const ls = o.lines?.length ? o.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)) })) : [emptyLine()];
       setLines(ls);
       setLineRaws(ls.map(l => ({ qty: String(l.quantity ?? 1), price: String(l.unit_price ?? 0), disc: String(l.discount_pct ?? 0) })));
     });
@@ -106,7 +106,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
       setDiscountPct(Number(q.discount_pct ?? 0));
       setShippingChgs(Number(q.shipping_charges ?? 0));
       if (q.lines?.length) {
-        const ls = q.lines.map(l => ({ ...l, invoiced_qty: 0 } as SalesOrderLine));
+        const ls = q.lines.map(l => ({ ...l, quantity: Math.round(Number(l.quantity)), invoiced_qty: 0 } as SalesOrderLine));
         setLines(ls);
         setLineRaws(ls.map(l => ({ qty: String(l.quantity ?? 1), price: String(l.unit_price ?? 0), disc: String(l.discount_pct ?? 0) })));
       }
@@ -139,6 +139,7 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
   }
 
   const numRx = /^\d*\.?\d*$/;
+  const intRx = /^\d*$/;
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList) return;
@@ -308,9 +309,9 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                     <tr>
                       <th className="table-th w-36">Product</th>
                       <th className="table-th">Description</th>
-                      <th className="table-th text-right w-16">Qty</th>
-                      <th className="table-th text-right w-24">Price</th>
-                      <th className="table-th text-right w-16">Disc%</th>
+                      <th className="table-th text-right w-24">Qty</th>
+                      <th className="table-th text-right w-28">Price</th>
+                      <th className="table-th text-right w-24">Disc%</th>
                       <th className="table-th w-28">Tax</th>
                       <th className="table-th text-right w-20">Tax Amt</th>
                       <th className="table-th text-right w-24">Amount</th>
@@ -329,25 +330,25 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                         <td className="table-td">
                           <input className="input w-full text-xs" value={l.description} onChange={e => updateLine(i, 'description', e.target.value)} />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
-                            type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            type="text" inputMode="numeric"
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.qty ?? String(l.quantity ?? 1)}
                             onChange={e => {
-                              if (!numRx.test(e.target.value)) return;
-                              updateLine(i, 'quantity', p2n(e.target.value) || 1, { qty: e.target.value });
+                              if (!intRx.test(e.target.value)) return;
+                              updateLine(i, 'quantity', parseInt(e.target.value, 10) || 1, { qty: e.target.value });
                             }}
                             onBlur={e => {
-                              const n = p2n(e.target.value) || 1;
+                              const n = parseInt(e.target.value, 10) || 1;
                               updateLine(i, 'quantity', n, { qty: String(n) });
                             }}
                           />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
                             type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.price ?? String(l.unit_price ?? 0)}
                             onChange={e => {
                               if (!numRx.test(e.target.value)) return;
@@ -359,10 +360,10 @@ export default function SalesOrderForm({ order, fromQuotation, onClose, onSaved 
                             }}
                           />
                         </td>
-                        <td className="table-td">
+                        <td className="table-td px-1">
                           <input
                             type="text" inputMode="decimal"
-                            className={`input w-full text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
+                            className={`input w-full px-1 text-right text-xs ${lineErrors[i] ? 'border-red-500' : ''}`}
                             value={lineRaws[i]?.disc ?? String(l.discount_pct)}
                             onChange={e => {
                               if (!numRx.test(e.target.value)) return;

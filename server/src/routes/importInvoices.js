@@ -1,29 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { getOrCreateSeriesByPrefix } = require('../utils');
+const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
 
 async function nextNumber(client) {
-  await getOrCreateSeriesByPrefix(client, 'II-', 6);
-  const { rows } = await client.query(
-    "UPDATE number_series SET next_number=next_number+1 WHERE prefix='II-' RETURNING lpad(next_number::text,padding::int,'0')"
-  );
-  return 'II-' + rows[0].lpad;
+  const series = await getOrCreateSeriesByPrefix(client, 'II-', 6);
+  return safeNextNumber(client, series, 'prefix', 'II-', 'import_invoices', 'number');
 }
 
-function calcTotals(lines, expenses, discount_pct, shipping_charges, round_off) {
+async function calcTotals(client, lines, expenses, discount_pct, shipping_charges, round_off) {
   const gross         = lines.reduce((s, l) => s + (Number(l.quantity||0) * Number(l.unit_price||0) * (1 - Number(l.discount_pct||0)/100)), 0);
   const disc_pct      = Number(discount_pct || 0);
   const disc_amt      = gross * disc_pct / 100;
-  const net_amount    = gross - disc_amt + Number(shipping_charges || 0) + Number(round_off || 0);
-  const expense_total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const total_landed_cost = net_amount + expense_total;
+
+  const { rows: taxes } = await client.query('SELECT id, rate FROM taxes');
+  const taxRateById = Object.fromEntries(taxes.map(t => [t.id, Number(t.rate)]));
   const linesWithAlloc = lines.map(l => {
     const amt = Number(l.quantity||0) * Number(l.unit_price||0) * (1 - Number(l.discount_pct||0)/100);
     const pct = gross > 0 ? (amt / gross) * 100 : 0;
-    return { ...l, amount: amt, allocation_pct: pct };
+    const rate = l.tax_id ? (taxRateById[l.tax_id] || 0) : 0;
+    const taxAmt = amt * rate / 100;
+    return { ...l, amount: amt, allocation_pct: pct, tax_amount: taxAmt };
   });
-  return { net_amount, expense_total, total_landed_cost, linesWithAlloc };
+  const tax_amount = linesWithAlloc.reduce((s, l) => s + l.tax_amount, 0);
+
+  const net_amount    = gross - disc_amt + tax_amount + Number(shipping_charges || 0) + Number(round_off || 0);
+  const expense_total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const total_landed_cost = net_amount + expense_total;
+  return { gross_amount: gross, tax_amount, net_amount, expense_total, total_landed_cost, linesWithAlloc };
 }
 
 async function saveLines(client, id, lines, expenses) {
@@ -31,8 +35,8 @@ async function saveLines(client, id, lines, expenses) {
   await client.query('DELETE FROM import_invoice_expenses WHERE import_invoice_id=$1', [id]);
   for (const l of lines) {
     await client.query(
-      'INSERT INTO import_invoice_lines (import_invoice_id,product_id,description,quantity,unit_price,discount_pct,amount,allocation_pct) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [id, l.product_id || null, l.description || '', l.quantity || 0, l.unit_price || 0, l.discount_pct || 0, l.amount || 0, l.allocation_pct || 0]
+      'INSERT INTO import_invoice_lines (import_invoice_id,product_id,description,quantity,unit_price,discount_pct,amount,allocation_pct,tax_id,tax_amount) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+      [id, l.product_id || null, l.description || '', l.quantity || 0, l.unit_price || 0, l.discount_pct || 0, l.amount || 0, l.allocation_pct || 0, l.tax_id || null, l.tax_amount || 0]
     );
   }
   for (const e of expenses) {
@@ -77,7 +81,7 @@ router.get('/:id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const inv = rows[0];
     const [{ rows: lines }, { rows: exps }] = await Promise.all([
-      pool.query('SELECT l.*, p.name AS product_name FROM import_invoice_lines l LEFT JOIN products p ON p.id=l.product_id WHERE l.import_invoice_id=$1 ORDER BY l.id', [inv.id]),
+      pool.query('SELECT l.*, p.name AS product_name, t.name AS tax_name, t.rate AS tax_rate FROM import_invoice_lines l LEFT JOIN products p ON p.id=l.product_id LEFT JOIN taxes t ON t.id=l.tax_id WHERE l.import_invoice_id=$1 ORDER BY l.id', [inv.id]),
       pool.query('SELECT e.*, c.name AS account_name, v.print_name AS contact_name FROM import_invoice_expenses e LEFT JOIN chart_of_accounts c ON c.id=e.account_id LEFT JOIN vendors v ON v.id=e.contact_id WHERE e.import_invoice_id=$1 ORDER BY e.id', [inv.id])
     ]);
     inv.lines = lines; inv.expenses = exps;
@@ -91,10 +95,10 @@ router.post('/', async (req, res) => {
   try {
     await client.query('BEGIN');
     const number = await nextNumber(client);
-    const { net_amount, expense_total, total_landed_cost, linesWithAlloc } = calcTotals(lines, expenses, discount_pct, shipping_charges, round_off);
+    const { gross_amount, tax_amount, net_amount, expense_total, total_landed_cost, linesWithAlloc } = await calcTotals(client, lines, expenses, discount_pct, shipping_charges, round_off);
     const { rows } = await client.query(
-      'INSERT INTO import_invoices (number,date,vendor_id,order_id,due_date,reference,notes,subject,discount_pct,shipping_charges,round_off,net_amount,expense_total,total_landed_cost,balance_amount) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *',
-      [number, date, vendor_id, order_id || null, due_date || null, reference || null, notes || null, subject || null, Number(discount_pct)||0, Number(shipping_charges)||0, Number(round_off)||0, net_amount, expense_total, total_landed_cost, total_landed_cost]
+      'INSERT INTO import_invoices (number,date,vendor_id,order_id,due_date,reference,notes,subject,discount_pct,shipping_charges,round_off,gross_amount,tax_amount,net_amount,expense_total,total_landed_cost,balance_amount) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *',
+      [number, date, vendor_id, order_id || null, due_date || null, reference || null, notes || null, subject || null, Number(discount_pct)||0, Number(shipping_charges)||0, Number(round_off)||0, gross_amount, tax_amount, net_amount, expense_total, total_landed_cost, total_landed_cost]
     );
     await saveLines(client, rows[0].id, linesWithAlloc, expenses);
     await client.query('COMMIT');
@@ -108,10 +112,10 @@ router.put('/:id', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { net_amount, expense_total, total_landed_cost, linesWithAlloc } = calcTotals(lines, expenses, discount_pct, shipping_charges, round_off);
+    const { gross_amount, tax_amount, net_amount, expense_total, total_landed_cost, linesWithAlloc } = await calcTotals(client, lines, expenses, discount_pct, shipping_charges, round_off);
     const { rows } = await client.query(
-      "UPDATE import_invoices SET vendor_id=$1,order_id=$2,date=$3,due_date=$4,reference=$5,notes=$6,subject=$7,discount_pct=$8,shipping_charges=$9,round_off=$10,net_amount=$11,expense_total=$12,total_landed_cost=$13,balance_amount=$13 WHERE id=$14 AND status='draft' RETURNING *",
-      [vendor_id, order_id || null, date, due_date || null, reference || null, notes || null, subject || null, Number(discount_pct)||0, Number(shipping_charges)||0, Number(round_off)||0, net_amount, expense_total, total_landed_cost, req.params.id]
+      "UPDATE import_invoices SET vendor_id=$1,order_id=$2,date=$3,due_date=$4,reference=$5,notes=$6,subject=$7,discount_pct=$8,shipping_charges=$9,round_off=$10,gross_amount=$11,tax_amount=$12,net_amount=$13,expense_total=$14,total_landed_cost=$15,balance_amount=$15 WHERE id=$16 AND status='draft' RETURNING *",
+      [vendor_id, order_id || null, date, due_date || null, reference || null, notes || null, subject || null, Number(discount_pct)||0, Number(shipping_charges)||0, Number(round_off)||0, gross_amount, tax_amount, net_amount, expense_total, total_landed_cost, req.params.id]
     );
     if (!rows.length) return res.status(400).json({ error: 'Not found or not draft' });
     await saveLines(client, rows[0].id, linesWithAlloc, expenses);

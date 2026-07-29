@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { getOrCreateSeriesByPrefix } = require('../utils');
+const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
 
 router.get('/', async (req, res) => {
   try {
@@ -40,11 +40,8 @@ router.post('/', async (req, res) => {
     manager_id = null, application_user_id = null, branch_name = null,
   } = req.body;
   try {
-    await getOrCreateSeriesByPrefix(pool, 'SP-', 6);
-    const { rows: codeRows } = await pool.query(
-      "UPDATE number_series SET next_number=next_number+1 WHERE prefix='SP-' RETURNING lpad(next_number::text,padding::int,'0')"
-    );
-    const code = 'SP-' + codeRows[0].lpad;
+    const series = await getOrCreateSeriesByPrefix(pool, 'SP-', 6);
+    const code = await safeNextNumber(pool, series, 'prefix', 'SP-', 'sales_persons', 'code');
     const { rows } = await pool.query(
       `INSERT INTO sales_persons
          (code,name,print_name,type,phone,email,can_change_price,can_add_discount,is_manager,notes,

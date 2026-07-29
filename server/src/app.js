@@ -176,9 +176,33 @@ app.use('/api/custom-fields',             customFieldsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Postgres error codes that reflect a bad request (client-fixable), not a server bug —
+// surfaced with a specific message instead of the generic 500 fallback below.
+function pgFriendlyMessage(err) {
+  switch (err.code) {
+    case '23505': { // unique_violation
+      const col = /Key \(([^)=]+)\)/.exec(err.detail || '')?.[1];
+      return col ? `A record with this ${col.split(',')[0].trim()} already exists.` : 'This record already exists.';
+    }
+    case '23503': // foreign_key_violation
+      return 'This references a record that does not exist or is not accessible.';
+    case '23502': // not_null_violation
+      return err.column ? `${err.column} is required.` : 'A required field is missing.';
+    case '22P02': // invalid_text_representation (bad int/uuid/etc cast)
+      return 'One of the submitted values is not in the expected format.';
+    default:
+      return null;
+  }
+}
+
 app.use((err, _req, res, _next) => {
   console.error('[API Error]', err?.message || err?.toString(), err?.code || '');
-  res.status(err.status || 500).json({ error: err.status === 401 || err.status === 403 ? err.message : 'Internal server error' });
+  if (err.status === 401 || err.status === 403) {
+    return res.status(err.status).json({ error: err.message });
+  }
+  const friendly = pgFriendlyMessage(err);
+  if (friendly) return res.status(400).json({ error: friendly });
+  res.status(err.status || 500).json({ error: 'Internal server error' });
 });
 
 module.exports = app;

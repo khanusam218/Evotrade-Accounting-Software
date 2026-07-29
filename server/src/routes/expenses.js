@@ -1,20 +1,12 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { round2, getOrCreateSeries } = require('../utils');
+const { round2, getOrCreateSeries, safeNextNumber } = require('../utils');
 const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateExpenseNumber(client) {
-  await getOrCreateSeries(client, 'Expenses', 'E-', 6);
-  const { rows } = await client.query(
-    `UPDATE number_series
-        SET next_number = next_number + 1
-      WHERE name = 'Expenses'
-      RETURNING prefix, next_number - 1 AS num, padding`
-  );
-  if (!rows.length) throw new Error('Number series "Expenses" not found');
-  const { prefix, num, padding } = rows[0];
-  return `${prefix}${String(num).padStart(padding, '0')}`;
+  const series = await getOrCreateSeries(client, 'Expenses', 'E-', 6);
+  return safeNextNumber(client, series, 'name', 'Expenses', 'expenses', 'number');
 }
 
 const EXPENSE_SELECT = `

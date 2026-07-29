@@ -1,19 +1,12 @@
 const express = require('express');
 const router  = express.Router();
 const pool    = require('../db');
-const { getOrCreateSeries } = require('../utils');
+const { getOrCreateSeries, safeNextNumber } = require('../utils');
 const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function generateBDNumber(client) {
-  await getOrCreateSeries(client, 'Bank Deposits', 'BD-', 6);
-  const { rows } = await client.query(
-    `UPDATE number_series SET next_number = next_number + 1
-      WHERE name = 'Bank Deposits'
-      RETURNING prefix, next_number - 1 AS num, padding`
-  );
-  if (!rows.length) throw new Error('Number series "Bank Deposits" not found');
-  const { prefix, num, padding } = rows[0];
-  return `${prefix}${String(num).padStart(padding, '0')}`;
+  const series = await getOrCreateSeries(client, 'Bank Deposits', 'BD-', 6);
+  return safeNextNumber(client, series, 'name', 'Bank Deposits', 'bank_deposits', 'number');
 }
 
 const BD_SELECT = `
