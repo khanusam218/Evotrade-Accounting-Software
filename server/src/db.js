@@ -4,13 +4,20 @@ require('dotenv').config();
 
 const companyAls = new AsyncLocalStorage();
 
-const rawPool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME     || 'evotrade',
-  user:     process.env.DB_USER     || 'postgres',
-  password: process.env.DB_PASSWORD || (() => { throw new Error('DB_PASSWORD environment variable is required'); })(),
-});
+const rawPool = new Pool(
+  process.env.DATABASE_URL
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.PGSSL === 'false' ? false : { rejectUnauthorized: false },
+      }
+    : {
+        host:     process.env.DB_HOST     || 'localhost',
+        port:     parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME     || 'evotrade',
+        user:     process.env.DB_USER     || 'postgres',
+        password: process.env.DB_PASSWORD || (() => { throw new Error('DB_PASSWORD environment variable is required'); })(),
+      }
+);
 
 rawPool.on('error', (err) => {
   console.error('PostgreSQL pool error:', err);
