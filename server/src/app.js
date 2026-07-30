@@ -1,4 +1,6 @@
 require('dotenv').config();
+const path    = require('path');
+const fs      = require('fs');
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');
@@ -90,8 +92,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(rateLimitGeneral);
 
 app.use('/api/auth', authLimiter);
-app.use((req, _res, next) => {
-  if (req.path === '/api/health' || req.path.startsWith('/api/auth')) {
+app.use('/api', (req, _res, next) => {
+  if (req.path === '/health' || req.path.startsWith('/auth')) {
     const companyId = 'evotrade';
     return pool.companyAls.run({ companyId }, () => next());
   }
@@ -175,6 +177,19 @@ app.use('/api/reports',                   reportsRouter);
 app.use('/api/custom-fields',             customFieldsRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+// Serve the built React app (built into server/public, see vite.config.ts)
+// when present, so a single Node process can host both the API and the
+// frontend on shared hosting. Built inside server/ rather than referenced
+// from client/dist so it travels with the server directory even on hosts
+// whose deploy runtime doesn't carry sibling folders alongside the app root.
+const clientDist = path.join(__dirname, '..', 'public');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get(/^(?!\/api\/).*/, (_req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
 
 // Postgres error codes that reflect a bad request (client-fixable), not a server bug —
 // surfaced with a specific message instead of the generic 500 fallback below.
