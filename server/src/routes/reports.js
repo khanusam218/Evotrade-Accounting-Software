@@ -1201,17 +1201,33 @@ router.get('/wh-location-stock', async (req, res) => {
 // ── Low Inventory Report ─────────────────────────────────────────────────────
 router.get('/low-inventory', async (req, res) => {
   try {
+    const { warehouse_id, category_id, brand_id, product_id, is_active } = req.query;
+    const conditions = [
+      'ps.min_stock_level > 0',
+      'ps.qty_on_hand <= ps.min_stock_level',
+    ];
+    const params = [];
+
+    if (warehouse_id) { params.push(warehouse_id); conditions.push(`ps.warehouse_id = $${params.length}`); }
+    if (category_id)  { params.push(category_id);  conditions.push(`p.category_id = $${params.length}`); }
+    if (brand_id)      { params.push(brand_id);      conditions.push(`p.brand_id = $${params.length}`); }
+    if (product_id)    { params.push(product_id);    conditions.push(`p.id = $${params.length}`); }
+    if (is_active !== undefined && is_active !== '') {
+      params.push(is_active === 'true');
+      conditions.push(`p.is_active = $${params.length}`);
+    }
+
     const { rows } = await pool.query(`
-      SELECT p.code, p.name AS product_name, p.unit_of_measurement AS unit,
-             COALESCE(ps.qty_on_hand, 0) AS qty_on_hand,
-             p.purchase_price AS unit_cost,
-             COALESCE(ps.qty_on_hand, 0) * p.purchase_price AS stock_value
-      FROM products p
-      LEFT JOIN product_stock ps ON ps.product_id = p.id
-      WHERE p.is_active = true AND p.track_inventory = true
-        AND COALESCE(ps.qty_on_hand, 0) <= 5
-      ORDER BY qty_on_hand ASC
-    `);
+      SELECT p.code AS product_code, p.name AS product_name,
+             w.name AS warehouse_name,
+             ps.qty_on_hand AS quantity_in_stock,
+             ps.min_stock_level AS low_threshold
+      FROM product_stock ps
+      JOIN products p   ON p.id = ps.product_id
+      JOIN warehouses w ON w.id = ps.warehouse_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY p.name, w.name
+    `, params);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { getWarehouses } from '../api/warehouses';
+import { getProductCategories, getBrands, getProducts } from '../api/products';
+import type { Warehouse } from '../types/warehouse';
+import type { Brand, Product, ProductCategory } from '../types/product';
 import {
   getTrialBalance, getProfitLoss, getArAging, getApAging, getSalesSummary, getPurchaseSummary, getStockReport,
   getCustomerLedger, getCustomerBalance, getVendorBalance, getSaleInvoiceReport, getPurchaseInvoiceReport,
@@ -179,6 +183,285 @@ const COLUMNS: Column[] = [
     ],
   },
 ];
+
+// ── Low Inventory Report ─────────────────────────────────────────────────────
+
+interface LowInventoryRow {
+  product_code: string;
+  product_name: string;
+  warehouse_name: string;
+  quantity_in_stock: number;
+  low_threshold: number;
+}
+
+type SortKey = 'product_name' | 'warehouse_name' | 'low_threshold';
+
+function printLowInventory(rows: LowInventoryRow[]) {
+  const win = window.open('', '_blank', 'width=900,height=650');
+  if (!win) return;
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Low Inventory Report</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 13px; color: #000; padding: 40px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    .company { font-size: 22px; font-weight: bold; }
+    .report-title { font-size: 22px; font-weight: bold; }
+    hr { border: none; border-top: 1.5px solid #000; margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr th { text-align: left; font-weight: bold; padding: 6px 8px; border-bottom: 1.5px solid #000; font-size: 13px; }
+    tbody tr td { padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 13px; }
+    td.num, th.num { text-align: right; }
+    @media print { body { padding: 20px; } @page { margin: 15mm; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="company">Evotrade</span>
+    <span class="report-title">Low Inventory Report</span>
+  </div>
+  <hr/>
+  <table>
+    <thead>
+      <tr>
+        <th>Product Code</th><th>Product Name</th><th>Warehouse Name</th>
+        <th class="num">Quantity In Stock</th><th class="num">Low Threshold</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.map(r => `
+      <tr>
+        <td>${r.product_code}</td>
+        <td>${r.product_name}</td>
+        <td>${r.warehouse_name}</td>
+        <td class="num">${r.quantity_in_stock}</td>
+        <td class="num">${r.low_threshold}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+</body>
+</html>`;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
+}
+
+function exportLowInventoryToExcel(rows: LowInventoryRow[]) {
+  const headers = ['Product Code', 'Product Name', 'Warehouse Name', 'Quantity In Stock', 'Low Threshold'];
+  const escape = (v: string | number) => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csvRows = [
+    headers.join(','),
+    ...rows.map(r => [
+      escape(r.product_code), escape(r.product_name), escape(r.warehouse_name),
+      escape(r.quantity_in_stock), escape(r.low_threshold),
+    ].join(',')),
+  ];
+  const blob = new Blob([csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'LowInventoryReport.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function LowInventoryReport({ onBack }: { onBack: () => void }) {
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [brands,     setBrands]     = useState<Brand[]>([]);
+  const [products,   setProducts]   = useState<Product[]>([]);
+
+  const [warehouseId, setWarehouseId] = useState('');
+  const [categoryId,  setCategoryId]  = useState('');
+  const [brandId,     setBrandId]     = useState('');
+  const [productId,   setProductId]   = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const [rows,    setRows]    = useState<LowInventoryRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const [sortKey, setSortKey] = useState<SortKey>('product_name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  useEffect(() => {
+    getWarehouses().then(setWarehouses).catch(() => {});
+    getProductCategories().then(setCategories).catch(() => {});
+    getBrands().then(setBrands).catch(() => {});
+    getProducts({ page: 1, limit: 1000 }).then(r => setProducts(r.data)).catch(() => {});
+  }, []);
+
+  async function handleShow() {
+    setLoading(true); setError('');
+    try {
+      const params: Record<string, string> = {};
+      if (warehouseId)  params.warehouse_id = warehouseId;
+      if (categoryId)   params.category_id  = categoryId;
+      if (brandId)      params.brand_id     = brandId;
+      if (productId)    params.product_id   = productId;
+      if (statusFilter) params.is_active    = statusFilter;
+      setRows(await getLowInventory(params));
+    } catch (e: any) {
+      setError(e.message); setRows(null);
+    } finally { setLoading(false); }
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!rows) return null;
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return copy;
+  }, [rows, sortKey, sortDir]);
+
+  const selectCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 bg-white';
+
+  const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
+    <th className="table-th cursor-pointer select-none" onClick={() => toggleSort(sortField)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <svg className={`w-3 h-3 ${sortKey === sortField ? 'text-gray-700' : 'text-gray-300'}`} fill="currentColor" viewBox="0 0 24 24">
+          {sortKey === sortField && sortDir === 'desc'
+            ? <path d="M7 10l5 5 5-5H7z" />
+            : <path d="M7 14l5-5 5 5H7z" />}
+        </svg>
+      </span>
+    </th>
+  );
+
+  return (
+    <div className="p-6">
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={onBack}
+          className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Reports
+        </button>
+        <span className="text-gray-300">|</span>
+        <h1 className="text-xl font-bold text-gray-800">Low Inventory Report</h1>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-5 gap-4 mb-5 bg-white p-4 rounded-lg border border-gray-200">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
+          <select className={selectCls} value={warehouseId} onChange={e => setWarehouseId(e.target.value)}>
+            <option value="">-All-</option>
+            {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Product Category</label>
+          <select className={selectCls} value={categoryId} onChange={e => setCategoryId(e.target.value)}>
+            <option value="">-All-</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+          <select className={selectCls} value={brandId} onChange={e => setBrandId(e.target.value)}>
+            <option value="">-All-</option>
+            {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Product</label>
+          <select className={selectCls} value={productId} onChange={e => setProductId(e.target.value)}>
+            <option value="">-All-</option>
+            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Product Status</label>
+          <select className={selectCls} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">-All-</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-3 mb-5">
+        <button onClick={handleShow} disabled={loading}
+          className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold px-5 py-2 rounded transition-colors disabled:opacity-50">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          {loading ? 'Loading…' : 'SHOW'}
+        </button>
+        <button onClick={() => rows && printLowInventory(sortedRows ?? rows)} disabled={!rows || rows.length === 0}
+          className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm font-semibold px-5 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
+          </svg>
+          PRINT
+        </button>
+        <button onClick={() => rows && exportLowInventoryToExcel(sortedRows ?? rows)} disabled={!rows || rows.length === 0}
+          className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm font-semibold px-5 py-2 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2-8H8a2 2 0 00-2 2v14a2 2 0 002 2h8a2 2 0 002-2V8l-6-6z" />
+          </svg>
+          EXPORT TO EXCEL
+        </button>
+      </div>
+
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-600 text-sm">{error}</div>}
+
+      {sortedRows && (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="table-th">Product Code</th>
+                <SortHeader label="Product Name" sortField="product_name" />
+                <SortHeader label="Warehouse Name" sortField="warehouse_name" />
+                <th className="table-th text-right">Quantity In Stock</th>
+                <SortHeader label="Low Threshold" sortField="low_threshold" />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.length === 0 && (
+                <tr><td colSpan={5} className="table-td text-center text-gray-400 py-8">No products are below their minimum stock level.</td></tr>
+              )}
+              {sortedRows.map((r, i) => (
+                <tr key={i} className="border-b hover:bg-gray-50">
+                  <td className="table-td font-mono text-xs">{r.product_code}</td>
+                  <td className="table-td">{r.product_name}</td>
+                  <td className="table-td">{r.warehouse_name}</td>
+                  <td className={`table-td text-right font-mono text-xs ${Number(r.quantity_in_stock) <= 0 ? 'text-red-600 font-semibold' : ''}`}>
+                    {r.quantity_in_stock}
+                  </td>
+                  <td className="table-td text-right font-mono text-xs">{r.low_threshold}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Runner for existing reports ───────────────────────────────────────────────
 
@@ -572,6 +855,7 @@ export default function ReportsPage() {
   const q = search.toLowerCase();
 
   // If a report is selected, show its runner (or a "coming soon" state if not yet wired to an API)
+  if (selected?.apiKey === 'low-inventory') return <LowInventoryReport onBack={() => setSelected(null)} />;
   if (selected) return <ReportRunner report={selected} onBack={() => setSelected(null)} />;
 
   return (
