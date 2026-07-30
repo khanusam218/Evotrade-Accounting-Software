@@ -1,13 +1,16 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import type { Brand, Product, ProductCategory, ProductFormData, Tax } from '../types/product';
+import type { Brand, Product, ProductCategory, ProductFormData, ProductStockLevel, Tax } from '../types/product';
 import {
   createProduct, getBrands, getNextProductCode,
-  getProductCategories, getTaxes, updateProduct,
+  getProductCategories, getProductStockLevels, getTaxes, updateProduct,
+  setProductStockLevel, deleteProductStockLevel,
 } from '../api/products';
 import { validateItemName, validatePositive } from '../utils/validators';
 import CustomFieldsTab from './CustomFieldsTab';
 import { getVendors } from '../api/vendors';
 import type { Vendor } from '../types/vendor';
+import { getWarehouses } from '../api/warehouses';
+import type { Warehouse } from '../types/warehouse';
 
 interface Props {
   product: Product | null;
@@ -62,6 +65,168 @@ const UOM_OPTIONS = ['PCS', 'KG', 'GM', 'LTR', 'ML', 'MTR', 'FT', 'BOX', 'DOZEN'
 
 function PlaceholderTab({ label }: { label: string }) {
   return <div className="flex items-center justify-center py-20 text-gray-400 text-sm">{label} settings coming soon.</div>;
+}
+
+interface StockLevelTabProps {
+  productId: number;
+}
+
+function StockLevelTab({ productId }: StockLevelTabProps) {
+  const [levels,       setLevels]       = useState<ProductStockLevel[]>([]);
+  const [warehouses,   setWarehouses]   = useState<Warehouse[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [newWarehouse, setNewWarehouse] = useState('');
+  const [newMinLevel,  setNewMinLevel]  = useState('');
+  const [editingId,    setEditingId]    = useState<number | null>(null);
+  const [editValue,    setEditValue]    = useState('');
+  const [saving,       setSaving]       = useState(false);
+
+  function reload() {
+    setLoading(true);
+    Promise.all([getProductStockLevels(productId), getWarehouses()])
+      .then(([lv, wh]) => { setLevels(lv); setWarehouses(wh); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { reload(); }, [productId]);
+
+  const availableWarehouses = warehouses.filter(
+    w => w.is_active && !levels.find(l => l.warehouse_id === w.id)
+  );
+
+  async function handleAdd() {
+    if (!newWarehouse) return;
+    setSaving(true);
+    try {
+      await setProductStockLevel(productId, Number(newWarehouse), parseFloat(newMinLevel) || 0);
+      setNewWarehouse(''); setNewMinLevel('');
+      reload();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'An error occurred');
+    } finally { setSaving(false); }
+  }
+
+  function cancelAdd() {
+    setNewWarehouse(''); setNewMinLevel('');
+  }
+
+  function startEdit(level: ProductStockLevel) {
+    setEditingId(level.id);
+    setEditValue(String(level.min_stock_level));
+  }
+
+  async function confirmEdit(level: ProductStockLevel) {
+    setSaving(true);
+    try {
+      await setProductStockLevel(productId, level.warehouse_id, parseFloat(editValue) || 0);
+      setEditingId(null);
+      reload();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'An error occurred');
+    } finally { setSaving(false); }
+  }
+
+  function cancelEdit() {
+    setEditingId(null); setEditValue('');
+  }
+
+  async function handleRemove(level: ProductStockLevel) {
+    if (!window.confirm(`Remove minimum stock level for ${level.warehouse_name}?`)) return;
+    setSaving(true);
+    try {
+      await deleteProductStockLevel(productId, level.warehouse_id);
+      reload();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'An error occurred');
+    } finally { setSaving(false); }
+  }
+
+  const inputCls = 'w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500';
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-20 text-gray-400 text-sm">Loading…</div>;
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-gray-200 bg-gray-50">
+            <th className="px-4 py-3 text-left font-semibold text-gray-800">Warehouse</th>
+            <th className="px-4 py-3 text-left font-semibold text-gray-800">Minimum Stock Level</th>
+            <th className="px-4 py-3 text-right font-semibold text-gray-800 w-24">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {levels.map(level => (
+            <tr key={level.id} className="border-b border-gray-100">
+              <td className="px-4 py-2 text-gray-800">{level.warehouse_name}</td>
+              <td className="px-4 py-2">
+                {editingId === level.id ? (
+                  <input type="number" min="0" step="0.01" autoFocus className={inputCls}
+                    value={editValue} onChange={e => setEditValue(e.target.value)} />
+                ) : (
+                  <span className="text-gray-700">{level.min_stock_level}</span>
+                )}
+              </td>
+              <td className="px-4 py-2 text-right">
+                {editingId === level.id ? (
+                  <div className="flex items-center justify-end gap-3">
+                    <button type="button" disabled={saving} onClick={() => confirmEdit(level)}
+                      className="text-green-600 hover:text-green-700 disabled:opacity-50" title="Save">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    </button>
+                    <button type="button" disabled={saving} onClick={cancelEdit}
+                      className="text-gray-400 hover:text-red-500 disabled:opacity-50" title="Cancel">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-3">
+                    <button type="button" onClick={() => startEdit(level)}
+                      className="text-gray-400 hover:text-green-600" title="Edit">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                    <button type="button" onClick={() => handleRemove(level)}
+                      className="text-gray-400 hover:text-red-500" title="Remove">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+
+          {/* Add new row */}
+          <tr>
+            <td className="px-4 py-2">
+              <select className={inputCls} value={newWarehouse} onChange={e => setNewWarehouse(e.target.value)}>
+                <option value="">-Choose-</option>
+                {availableWarehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+            </td>
+            <td className="px-4 py-2">
+              <input type="number" min="0" step="0.01" placeholder="Minimum Stock Level" className={inputCls}
+                value={newMinLevel} onChange={e => setNewMinLevel(e.target.value)} />
+            </td>
+            <td className="px-4 py-2 text-right">
+              <div className="flex items-center justify-end gap-3">
+                <button type="button" disabled={saving || !newWarehouse} onClick={handleAdd}
+                  className="text-green-600 hover:text-green-700 disabled:opacity-30" title="Add">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                </button>
+                <button type="button" disabled={saving} onClick={cancelAdd}
+                  className="text-gray-400 hover:text-red-500 disabled:opacity-50" title="Clear">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function ProductForm({ product, onClose, onSaved, onRefresh, onSavedAndNew }: Props) {
@@ -910,7 +1075,13 @@ export default function ProductForm({ product, onClose, onSaved, onRefresh, onSa
             </div>
           )}
 
-          {tab === 'stock'    && <PlaceholderTab label="Stock Level" />}
+          {tab === 'stock' && (
+            isEdit
+              ? <StockLevelTab productId={product.id} />
+              : <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
+                  Save the product first to set warehouse stock levels.
+                </div>
+          )}
           {/* ══ TAXES TAB ══════════════════════════════════════════════════════ */}
           {tab === 'taxes' && (
             <div className="grid grid-cols-2 gap-8">

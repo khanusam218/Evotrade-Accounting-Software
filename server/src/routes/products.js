@@ -276,6 +276,60 @@ router.put('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/products/:id/stock-levels
+router.get('/:id/stock-levels', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT ps.id, ps.warehouse_id, w.name AS warehouse_name,
+              ps.qty_on_hand, ps.min_stock_level
+         FROM product_stock ps
+         JOIN warehouses w ON w.id = ps.warehouse_id
+        WHERE ps.product_id = $1
+        ORDER BY w.name`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// PUT /api/products/:id/stock-levels/:warehouseId
+router.put('/:id/stock-levels/:warehouseId', async (req, res, next) => {
+  try {
+    const { min_stock_level = 0 } = req.body;
+    const { rows } = await pool.query(
+      `INSERT INTO product_stock (product_id, warehouse_id, min_stock_level)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (product_id, warehouse_id)
+       DO UPDATE SET min_stock_level = EXCLUDED.min_stock_level
+       RETURNING id, warehouse_id, qty_on_hand, min_stock_level`,
+      [req.params.id, req.params.warehouseId, min_stock_level]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/products/:id/stock-levels/:warehouseId
+router.delete('/:id/stock-levels/:warehouseId', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT qty_on_hand FROM product_stock WHERE product_id = $1 AND warehouse_id = $2`,
+      [req.params.id, req.params.warehouseId]
+    );
+    if (rows.length && Number(rows[0].qty_on_hand) === 0) {
+      await pool.query(
+        `DELETE FROM product_stock WHERE product_id = $1 AND warehouse_id = $2`,
+        [req.params.id, req.params.warehouseId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE product_stock SET min_stock_level = 0 WHERE product_id = $1 AND warehouse_id = $2`,
+        [req.params.id, req.params.warehouseId]
+      );
+    }
+    res.json({ message: 'Stock level removed' });
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/products/:id
 router.delete('/:id', async (req, res, next) => {
   try {

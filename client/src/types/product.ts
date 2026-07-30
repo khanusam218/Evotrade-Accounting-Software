@@ -113,3 +113,11 @@ export interface ProductFilters {
   principal_vendor_id?: string;
   is_active?: string;
 }
+
+export interface ProductStockLevel {
+  id: number;
+  warehouse_id: number;
+  warehouse_name: string;
+  qty_on_hand: number;
+  min_stock_level: number;
+}
