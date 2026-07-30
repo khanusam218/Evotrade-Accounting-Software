@@ -1,0 +1,614 @@
+<title>Evotrade — Feature Register</title>
+<style>
+  :root{
+    --paper: #E9F0E3;
+    --paper-2: #DFE9D7;
+    --surface: #FBFDF9;
+    --ink: #1E2A1F;
+    --ink-soft: #445045;
+    --accent: #2E5C3A;
+    --accent-strong: #204029;
+    --stamp: #B8791E;
+    --stamp-ink: #7A4E14;
+    --rule: #C7D3BE;
+    --rule-strong: #A9BA9D;
+    --shadow: 0 1px 2px rgba(30,42,31,.06), 0 6px 20px -8px rgba(30,42,31,.18);
+  }
+  :root[data-theme="dark"]{
+    --paper: #121A13;
+    --paper-2: #182219;
+    --surface: #17211A;
+    --ink: #E7EEE2;
+    --ink-soft: #B7C4B1;
+    --accent: #7FBE8E;
+    --accent-strong: #9ED4AB;
+    --stamp: #E0A84C;
+    --stamp-ink: #F1C583;
+    --rule: #2B3A2C;
+    --rule-strong: #3C4E3D;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.5);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper: #121A13;
+      --paper-2: #182219;
+      --surface: #17211A;
+      --ink: #E7EEE2;
+      --ink-soft: #B7C4B1;
+      --accent: #7FBE8E;
+      --accent-strong: #9ED4AB;
+      --stamp: #E0A84C;
+      --stamp-ink: #F1C583;
+      --rule: #2B3A2C;
+      --rule-strong: #3C4E3D;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 30px -10px rgba(0,0,0,.5);
+    }
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--paper);
+    background-image:
+      linear-gradient(var(--rule) 1px, transparent 1px);
+    background-size: 100% 2.1em;
+    background-position: 0 7.4em;
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .display{
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  }
+  .mono{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wrap{ max-width: 880px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---------- Masthead ---------- */
+  header.masthead{
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 56px 24px 28px;
+    border-bottom: 3px double var(--rule-strong);
+  }
+  .eyebrow{
+    display:flex; align-items:center; gap:10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 14px;
+  }
+  .eyebrow::before{
+    content:"";
+    width: 22px; height: 1px;
+    background: var(--ink-soft);
+    display:inline-block;
+  }
+  h1.title{
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.08;
+    margin: 0 0 10px;
+    font-weight: 600;
+    color: var(--accent-strong);
+    text-wrap: balance;
+  }
+  .subtitle{
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 15.5px;
+    margin: 0 0 20px;
+  }
+  .masthead-meta{
+    display:flex; flex-wrap:wrap; gap: 22px 34px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .masthead-meta b{ color: var(--ink); font-weight:600; }
+  .masthead-meta .mono{ letter-spacing:.02em; }
+
+  /* ---------- Section headings ---------- */
+  section{ margin-top: 54px; }
+  .section-head{
+    display:flex; align-items:baseline; gap: 14px;
+    margin-bottom: 6px;
+  }
+  h2.section-title{
+    font-size: 22px;
+    margin: 0;
+    font-weight: 600;
+    color: var(--accent-strong);
+  }
+  .section-note{
+    color: var(--ink-soft);
+    font-size: 14px;
+    margin: 6px 0 26px;
+    max-width: 68ch;
+  }
+  .folio{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--rule-strong);
+    letter-spacing: .04em;
+  }
+
+  /* ---------- New-entry stamped cards ---------- */
+  .entries{
+    display:flex; flex-direction:column; gap: 14px;
+  }
+  .entry{
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    box-shadow: var(--shadow);
+    padding: 18px 22px 18px 22px;
+  }
+  .entry-head{
+    display:flex; align-items:flex-start; justify-content:space-between; gap: 16px;
+    margin-bottom: 8px;
+  }
+  .entry h3{
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .stamp{
+    flex-shrink: 0;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    color: var(--stamp);
+    border: 1.5px solid var(--stamp);
+    border-radius: 999px;
+    padding: 4px 10px 3px;
+    transform: rotate(-4deg);
+    opacity: .92;
+    white-space: nowrap;
+  }
+  .entry-grid{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: 8px 20px;
+    font-size: 14px;
+  }
+  @media (min-width: 640px){
+    .entry-grid{ grid-template-columns: 1fr 1fr; }
+    .entry-grid .howto{ grid-column: 1 / -1; }
+  }
+  .entry-grid .label{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    display:block;
+    margin-bottom: 3px;
+  }
+  .entry-grid p{ margin: 0; color: var(--ink); }
+  .howto code{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--paper-2);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 1.5px 6px;
+    font-size: 12.5px;
+    color: var(--accent-strong);
+  }
+
+  .also-fixed{
+    margin-top: 18px;
+    padding: 14px 18px;
+    border-left: 2px solid var(--rule-strong);
+    background: transparent;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .also-fixed .label{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    display:block;
+    margin-bottom: 6px;
+  }
+  .also-fixed ul{ margin: 0; padding-left: 18px; }
+  .also-fixed li{ margin: 3px 0; }
+
+  /* ---------- Full register (ledger blocks) ---------- */
+  .register{
+    border-top: 1px solid var(--rule-strong);
+  }
+  .module{
+    display:grid;
+    grid-template-columns: 200px 1fr;
+    gap: 6px 28px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  @media (max-width: 640px){
+    .module{ grid-template-columns: 1fr; gap: 6px; }
+  }
+  .module-name{
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+    padding-top: 1px;
+  }
+  .module-purpose{
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-top: 4px;
+    max-width: 26ch;
+  }
+  .module-items{
+    display:flex; flex-wrap:wrap;
+    gap: 7px 10px;
+    align-content: flex-start;
+  }
+  .item{
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 4px 10px;
+    line-height: 1.3;
+  }
+  .item.dim{ color: var(--ink-soft); font-style: italic; }
+
+  footer{
+    max-width: 880px;
+    margin: 60px auto 0;
+    padding: 22px 24px 0;
+    border-top: 3px double var(--rule-strong);
+    font-size: 12px;
+    color: var(--ink-soft);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+
+  ::selection{ background: var(--accent); color: var(--surface); }
+</style>
+
+<header class="masthead">
+  <div class="eyebrow">Internal Reference</div>
+  <h1 class="title display">Evotrade Accounting Software — Feature Register</h1>
+  <p class="subtitle">A working list of everything the system does today, and a closer look at what was built or repaired in the most recent round of work.</p>
+  <div class="masthead-meta">
+    <span><b>Prepared</b> <span class="mono">30 Jul 2026</span></span>
+    <span><b>Covers</b> Sales · Purchases · Inventory · Manufacturing · POS · CRM · HR · Finance · Reports</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="new">
+    <div class="section-head">
+      <h2 class="section-title display">What's New</h2>
+      <span class="folio">§ 1</span>
+    </div>
+    <p class="section-note">Newly built or newly working features, in the order they came up. Each entry: why it exists, what it gets you, and where to find it.</p>
+
+    <div class="entries">
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Add Call button (CRM)</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>The Call Records screen had no way to actually log a call — the form existed, but nothing opened it.</p></div>
+          <div><span class="label">Benefit</span><p>Staff can record a customer call the moment it happens instead of it going untracked.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>CRM → Call</code> → click <code>+ ADD CALL</code>, fill in subject/contact/outcome, save.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Readable quantity, price &amp; discount fields</h3>
+          <span class="stamp">fixed</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>Those columns were so narrow that typed numbers were clipped and unreadable across most sales and purchase forms.</p></div>
+          <div><span class="label">Benefit</span><p>You can actually see what you typed before saving — fewer mis-keyed quantities and prices.</p></div>
+          <div class="howto"><span class="label">How to use</span><p>Automatic. Applies to Quotations, Orders, Invoices, Returns, Receipts, Stock Adjustments, Recurring &amp; Import Invoices.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Whole-number quantities</h3>
+          <span class="stamp">fixed</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>Quantity fields were showing values like <span class="mono">5.0000</span> for a business that only ever sells whole units.</p></div>
+          <div><span class="label">Benefit</span><p>Clean, whole quantities everywhere — nothing to mentally round off.</p></div>
+          <div class="howto"><span class="label">How to use</span><p>Automatic on every line-item quantity field, on entry and when re-opening a saved record.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Invoice ⇄ Delivery linking</h3>
+          <span class="stamp">fixed</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>The "Invoice Deliveries" popup couldn't find a delivery unless it happened to share an order reference — most deliveries didn't.</p></div>
+          <div><span class="label">Benefit</span><p>You can now see what's actually been delivered against an invoice, reliably.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>Sales Invoices</code> → row action → <code>Invoice Deliveries</code>.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Purchase Order → Purchase Invoice</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>There was no way to bill a vendor directly from a confirmed order — everything had to be re-typed on a fresh invoice.</p></div>
+          <div><span class="label">Benefit</span><p>One click carries the vendor, lines, and discount over. Faster billing, fewer transcription errors.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>Purchase Orders</code> → confirmed/received order → <code>Invoice</code> button.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Tax on Purchase Invoice, Purchase Return &amp; Import Invoice</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>These three forms had no tax selector at all, so purchase-side tax always came out as 0.00.</p></div>
+          <div><span class="label">Benefit</span><p>Purchase and import tax totals are now real numbers, not placeholders.</p></div>
+          <div class="howto"><span class="label">How to use</span><p>Pick a rate from the new <code>Tax</code> column on any line item.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Assembly Jobs read the real BOM</h3>
+          <span class="stamp">fixed</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>Starting a new Job Order always said "this BOM has no components" — it was reading from a list that never carried them.</p></div>
+          <div><span class="label">Benefit</span><p>Job orders now pre-fill with the product's actual recipe, scaled to the quantity you're building.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>Manufacturing</code> → new Job Order → choose a product with a saved BOM.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Two independent carts at the register</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>Invoice 1 / Invoice 2 tabs existed but shared one cart — switching tabs didn't actually switch anything.</p></div>
+          <div><span class="label">Benefit</span><p>A cashier can park one customer's sale, help someone else on the second tab, then come back without losing either cart.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>POS Terminal</code> → click between <code>Invoice 1</code> / <code>Invoice 2</code> freely.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>Sale Return, for real</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>The Sale Return tab was a label with no logic behind it — it couldn't look anything up or return anything.</p></div>
+          <div><span class="label">Benefit</span><p>Look up a past sale, return exactly what came back (capped at what's actually left to return), stock goes back into inventory automatically.</p></div>
+          <div class="howto"><span class="label">How to use</span><p><code>POS Terminal → Sale Return</code> → search the invoice number → enter return quantities → <code>Process Return</code>.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>See the invoice number, and browse past sales</h3>
+          <span class="stamp">new</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>After checkout there was no way to know what number a sale got, and nowhere in the app listed individual POS sales.</p></div>
+          <div><span class="label">Benefit</span><p>A confirmation shows the invoice number right after checkout; a new page lets you search/filter every past sale.</p></div>
+          <div class="howto"><span class="label">How to use</span><p>Banner appears after <code>Confirm &amp; Checkout</code>. Full list at <code>POS → Transactions</code>.</p></div>
+        </div>
+      </article>
+
+      <article class="entry">
+        <div class="entry-head">
+          <h3>POS sales post to the ledger</h3>
+          <span class="stamp">fixed</span>
+        </div>
+        <div class="entry-grid">
+          <div><span class="label">Purpose</span><p>Counter sales never touched the accounting books — Trial Balance and Profit &amp; Loss were silently missing all POS revenue.</p></div>
+          <div><span class="label">Benefit</span><p>Every sale, void, and return now posts a proper balanced journal entry, so your financial reports finally include register sales.</p></div>
+          <div class="howto"><span class="label">How to use</span><p>Automatic — happens the instant a sale is completed, voided, or returned.</p></div>
+        </div>
+      </article>
+
+    </div>
+
+    <div class="also-fixed">
+      <span class="label">Also tightened, quietly</span>
+      <ul>
+        <li>Document numbering (invoices, orders, receipts, and ~30 other types) made collision-proof, so imported or older records can no longer clash with new ones.</li>
+        <li>Error messages now say what actually went wrong ("this already exists", "a required field is missing") instead of a generic failure message.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="register">
+    <div class="section-head">
+      <h2 class="section-title display">Full Feature Register</h2>
+      <span class="folio">§ 2</span>
+    </div>
+    <p class="section-note">Everything in the system today, grouped by ledger. Items in <em>italics</em> are recorded but not yet acted on further (see notes).</p>
+
+    <div class="register">
+
+      <div class="module">
+        <div>
+          <div class="module-name">Sales</div>
+          <div class="module-purpose">Quote, order, deliver, invoice, and collect from customers.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Customers</span>
+          <span class="item">Sales Quotations</span>
+          <span class="item">Sales Orders</span>
+          <span class="item">Sales Invoices</span>
+          <span class="item">Sales Deliveries</span>
+          <span class="item">Sales Returns</span>
+          <span class="item">Sales Refunds</span>
+          <span class="item">Sales Settlements</span>
+          <span class="item">Credit Notes</span>
+          <span class="item">Recurring Invoices</span>
+          <span class="item">Sales Persons</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Purchases</div>
+          <div class="module-purpose">Request, order, receive, and pay vendors.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Vendors</span>
+          <span class="item">Purchase Quotations</span>
+          <span class="item">Purchase Orders</span>
+          <span class="item">Purchase Invoices</span>
+          <span class="item">Purchase Receipts</span>
+          <span class="item">Purchase Returns</span>
+          <span class="item">Purchase Refunds</span>
+          <span class="item">Purchase Settlements</span>
+          <span class="item">Debit Notes</span>
+          <span class="item">Import Invoices</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Inventory &amp; Manufacturing</div>
+          <div class="module-purpose">Track stock and assemble finished goods.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Products</span>
+          <span class="item">Warehouses</span>
+          <span class="item">Stock Adjustments</span>
+          <span class="item">Stock Movements</span>
+          <span class="item">Stock Audits</span>
+          <span class="item">Bill of Materials</span>
+          <span class="item">Work Orders</span>
+          <span class="item">Disassembly Orders</span>
+          <span class="item">Barcode Templates</span>
+          <span class="item dim">Scheduled Valuations — record-keeping only, doesn't calculate yet</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Point of Sale</div>
+          <div class="module-purpose">Counter checkout and till management.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">POS Terminal</span>
+          <span class="item">Checkout Counters</span>
+          <span class="item">Delivery Counters</span>
+          <span class="item">Transactions</span>
+          <span class="item">Daily Summary</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">CRM</div>
+          <div class="module-purpose">Leads, prospects, and customer contact history.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Leads (convert to Customer)</span>
+          <span class="item">Prospects</span>
+          <span class="item">Calls</span>
+          <span class="item">Events</span>
+          <span class="item">Tickets</span>
+          <span class="item">Other Contacts</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">HR</div>
+          <div class="module-purpose">Staff records.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Employees</span>
+          <span class="item">Departments</span>
+          <span class="item">Designations</span>
+          <span class="item">Projects</span>
+          <span class="item dim">Payroll — not calculated; this is record-keeping only</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Banking &amp; Finance</div>
+          <div class="module-purpose">Cash movement and the books behind everything above.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Bank Accounts</span>
+          <span class="item">Bank Deposits</span>
+          <span class="item">Fund Transfers</span>
+          <span class="item">Receive Payments</span>
+          <span class="item">Make Payments</span>
+          <span class="item">Other Collections</span>
+          <span class="item">Other Payments</span>
+          <span class="item">Expenses</span>
+          <span class="item">Journal Entries</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Reports</div>
+          <div class="module-purpose">What the ledger adds up to.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Trial Balance</span>
+          <span class="item">Profit &amp; Loss</span>
+          <span class="item">Balance Sheet</span>
+          <span class="item">Account Ledger</span>
+          <span class="item">Transaction List</span>
+          <span class="item">Audit Log</span>
+          <span class="item">Stock Valuation</span>
+          <span class="item">Customer / Vendor Aging</span>
+          <span class="item dim">Sales Target &amp; Commission — currently unreliable, flagged for rework</span>
+        </div>
+      </div>
+
+      <div class="module">
+        <div>
+          <div class="module-name">Settings</div>
+          <div class="module-purpose">Company-wide configuration.</div>
+        </div>
+        <div class="module-items">
+          <span class="item">Company Setup</span>
+          <span class="item">Chart of Accounts</span>
+          <span class="item">Taxes</span>
+          <span class="item">Number Series</span>
+          <span class="item">Custom Fields</span>
+          <span class="item">Users</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>Evotrade Accounting Software</span>
+    <span class="mono">Feature Register · internal use</span>
+  </footer>
+
+</div>

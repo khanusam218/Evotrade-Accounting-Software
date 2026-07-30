@@ -2,10 +2,84 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { getOrCreateSeriesByPrefix, safeNextNumber } = require('../utils');
+const { postJournalEntry, reverseJournalEntriesForSource, changeToLine } = require('../journalPosting');
 
 async function nextSessionNumber(client) {
   const series = await getOrCreateSeriesByPrefix(client, 'PSS-', 4);
   return safeNextNumber(client, series, 'prefix', 'PSS-', 'pos_sessions', 'number');
+}
+
+// Picks the account a sale's payment amount lands in: the counter's own cash
+// drawer for cash, Undeposited Funds for card/bank (pending a real Bank
+// Deposit later, matching how Receive Payments already treats non-cash
+// instruments), or Accounts Receivable for a credit sale not yet collected.
+async function getSaleDebitAccount(client, paymentMode, cashAccountId) {
+  if (paymentMode === 'credit') {
+    const { rows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='AccountsReceivable' LIMIT 1`);
+    return rows[0] || null;
+  }
+  if (paymentMode === 'cash') {
+    if (cashAccountId) {
+      const { rows } = await client.query(`SELECT * FROM chart_of_accounts WHERE id=$1`, [cashAccountId]);
+      if (rows.length) return rows[0];
+    }
+    const { rows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='Cash' LIMIT 1`);
+    return rows[0] || null;
+  }
+  const { rows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='UndepositedFunds' LIMIT 1`);
+  return rows[0] || null;
+}
+
+// Resolves the two accounts a POS sale affects and the signed balance change
+// for each (sign=1 for the original sale, sign=-1 to undo it on void).
+async function resolvePOSSaleChange(client, tx, cashAccountId, sign) {
+  const debitCoa = await getSaleDebitAccount(client, tx.payment_mode, cashAccountId);
+  if (!debitCoa) {
+    const label = tx.payment_mode === 'credit' ? 'Accounts Receivable' : tx.payment_mode === 'cash' ? 'Cash' : 'Undeposited Funds';
+    throw new Error(`${label} account not configured for this company`);
+  }
+  const { rows: revRows } = await client.query(`SELECT * FROM chart_of_accounts WHERE system_name='DefaultSales' LIMIT 1`);
+  if (!revRows.length) throw new Error('No revenue account found');
+  const revCoa = revRows[0];
+
+  const total = Number(tx.total) * sign;
+  return {
+    debitCoa, revCoa,
+    debitChange: debitCoa.normal_balance === 'debit'  ? total : -total,
+    revChange:   revCoa.normal_balance   === 'credit' ? total : -total,
+  };
+}
+
+// Posts a brand-new JE for a POS sale or return (sign=1 sale, sign=-1
+// return): debit the payment-mode account, credit Sales Revenue — the same
+// two-line model Sales Invoice approval already uses (net_amount rolled into
+// one revenue line, no separate tax-payable split), kept consistent here.
+async function postPOSSaleEntry(client, tx, cashAccountId, sign, memoPrefix) {
+  const { debitCoa, revCoa, debitChange, revChange } = await resolvePOSSaleChange(client, tx, cashAccountId, sign);
+  await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id=$2`, [debitChange, debitCoa.id]);
+  await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id=$2`, [revChange, revCoa.id]);
+  await postJournalEntry(client, {
+    date: tx.date, memo: `${memoPrefix} ${tx.number}`, reference: tx.number,
+    source_type: 'POSTransaction', source_id: tx.id,
+    lines: [
+      changeToLine(debitCoa, debitChange, `${memoPrefix} ${tx.number}`),
+      changeToLine(revCoa, revChange, `${memoPrefix} ${tx.number}`),
+    ],
+  });
+}
+
+// Undoes an already-posted sale's balance impact (sign=-1) and posts the
+// audit-trail reversal JE against the *original* posting — used by void,
+// where a brand-new JE (postPOSSaleEntry) would create a second, unrelated
+// entry instead of reversing the one the sale itself already posted.
+async function voidPOSSaleEntry(client, tx, cashAccountId) {
+  const { debitCoa, revCoa, debitChange, revChange } = await resolvePOSSaleChange(client, tx, cashAccountId, -1);
+  await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id=$2`, [debitChange, debitCoa.id]);
+  await client.query(`UPDATE chart_of_accounts SET current_balance = current_balance + $1 WHERE id=$2`, [revChange, revCoa.id]);
+  await reverseJournalEntriesForSource(client, {
+    source_type: 'POSTransaction', source_id: tx.id,
+    date: new Date().toISOString().slice(0, 10), memo: `Void POS Sale ${tx.number}`,
+  });
 }
 
 async function nextTxNumber(client) {
@@ -165,7 +239,9 @@ router.post('/transactions', async (req, res) => {
     await client.query('BEGIN');
 
     const { rows: sess } = await client.query(
-      "SELECT id, warehouse_id FROM pos_sessions WHERE id=$1 AND status='open'", [session_id]
+      `SELECT s.id, s.warehouse_id, c.cash_account_id
+         FROM pos_sessions s LEFT JOIN pos_counters c ON c.id = s.counter_id
+        WHERE s.id=$1 AND s.status='open'`, [session_id]
     );
     if (!sess.length) {
       await client.query('ROLLBACK');
@@ -201,6 +277,10 @@ router.post('/transactions', async (req, res) => {
       }
     }
 
+    if (Number(rows[0].total) > 0) {
+      await postPOSSaleEntry(client, rows[0], session.cash_account_id, 1, 'POS Sale');
+    }
+
     await client.query('COMMIT');
     res.status(201).json(rows[0]);
   } catch (e) { await client.query('ROLLBACK'); res.status(400).json({ error: e.message }); }
@@ -222,7 +302,9 @@ router.post('/transactions/:id/void', async (req, res) => {
     const tx = rows[0];
 
     const { rows: sess } = await client.query(
-      'SELECT warehouse_id FROM pos_sessions WHERE id=$1', [tx.session_id]
+      `SELECT s.warehouse_id, c.cash_account_id
+         FROM pos_sessions s LEFT JOIN pos_counters c ON c.id = s.counter_id
+        WHERE s.id=$1`, [tx.session_id]
     );
     if (sess.length && sess[0].warehouse_id) {
       const { rows: lines } = await client.query(
@@ -237,6 +319,12 @@ router.post('/transactions/:id/void', async (req, res) => {
           );
         }
       }
+    }
+
+    if (Number(tx.total) > 0) {
+      try {
+        await voidPOSSaleEntry(client, tx, sess[0]?.cash_account_id);
+      } catch { /* accounts may not be configured — voiding the sale itself still succeeds */ }
     }
 
     await client.query('COMMIT');
@@ -265,7 +353,9 @@ router.post('/transactions/:id/return', async (req, res) => {
     const orig = origRows[0];
 
     const { rows: sess } = await client.query(
-      "SELECT id, warehouse_id FROM pos_sessions WHERE id=$1 AND status='open'", [session_id]
+      `SELECT s.id, s.warehouse_id, c.cash_account_id
+         FROM pos_sessions s LEFT JOIN pos_counters c ON c.id = s.counter_id
+        WHERE s.id=$1 AND s.status='open'`, [session_id]
     );
     if (!sess.length) {
       await client.query('ROLLBACK');
@@ -339,6 +429,10 @@ router.post('/transactions/:id/return', async (req, res) => {
           [l.product_id, session.warehouse_id, l.quantity]
         );
       }
+    }
+
+    if (Number(rows[0].total) > 0) {
+      await postPOSSaleEntry(client, rows[0], session.cash_account_id, -1, 'POS Sale Return');
     }
 
     await client.query('COMMIT');
